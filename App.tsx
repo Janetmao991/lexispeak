@@ -33,10 +33,17 @@ const App: React.FC = () => {
 
   // Auth modal
   const [showAuth, setShowAuth] = useState(false);
+  const [authView, setAuthView] = useState<'signin' | 'forgot'>('signin');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [authBusy, setAuthBusy] = useState(false);
   const [authMessage, setAuthMessage] = useState<string | null>(null);
+
+  // Password recovery (arrived via reset-email link)
+  const [showReset, setShowReset] = useState(false);
+  const [newPassword, setNewPassword] = useState('');
+  const [resetBusy, setResetBusy] = useState(false);
+  const [resetMessage, setResetMessage] = useState<string | null>(null);
 
   // Settings modal
   const [showSettings, setShowSettings] = useState(false);
@@ -50,7 +57,10 @@ const App: React.FC = () => {
   useEffect(() => {
     if (!supabase) return;
     supabase.auth.getSession().then(({ data }) => setSession(data.session));
-    const { data: sub } = supabase.auth.onAuthStateChange((_e, s) => setSession(s));
+    const { data: sub } = supabase.auth.onAuthStateChange((event, s) => {
+      setSession(s);
+      if (event === 'PASSWORD_RECOVERY') setShowReset(true);
+    });
     return () => sub.subscription.unsubscribe();
   }, []);
 
@@ -109,14 +119,38 @@ const App: React.FC = () => {
     setAuthBusy(true);
     setAuthMessage(null);
     try {
-      const { error } = await supabase.auth.signInWithPassword({ email, password });
-      if (error) throw error;
-      setShowAuth(false);
-      setPassword('');
+      if (authView === 'forgot') {
+        const { error } = await supabase.auth.resetPasswordForEmail(email, { redirectTo: window.location.origin });
+        if (error) throw error;
+        setAuthMessage('Reset link sent — check your inbox (and spam folder), then open the link in this browser.');
+      } else {
+        const { error } = await supabase.auth.signInWithPassword({ email, password });
+        if (error) throw error;
+        setShowAuth(false);
+        setPassword('');
+      }
     } catch (err: any) {
       setAuthMessage(err.message || 'Sign in failed.');
     } finally {
       setAuthBusy(false);
+    }
+  };
+
+  const handleSetNewPassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!supabase) return;
+    setResetBusy(true);
+    setResetMessage(null);
+    try {
+      const { error } = await supabase.auth.updateUser({ password: newPassword });
+      if (error) throw error;
+      setNewPassword('');
+      setShowReset(false);
+      setResetMessage(null);
+    } catch (err: any) {
+      setResetMessage(err.message || 'Could not update password.');
+    } finally {
+      setResetBusy(false);
     }
   };
 
@@ -270,20 +304,56 @@ const App: React.FC = () => {
         <div className="fixed inset-0 bg-stone-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={() => setShowAuth(false)}>
           <div className="bg-white w-full max-w-md rounded-2xl shadow-2xl p-8 space-y-5" onClick={e => e.stopPropagation()}>
             <div className="flex justify-between items-center">
-              <h3 className="text-2xl font-serif font-bold">Sign In</h3>
+              <h3 className="text-2xl font-serif font-bold">{authView === 'signin' ? 'Sign In' : 'Reset Password'}</h3>
               <button onClick={() => setShowAuth(false)} className="text-stone-400 hover:text-stone-900"><X /></button>
             </div>
-            <p className="text-stone-500 text-sm">Use the same account as LexiAI — your vocabulary comes with you, and words you master here light up 🗣️ there.</p>
+            <p className="text-stone-500 text-sm">
+              {authView === 'signin'
+                ? 'Use the same account as LexiAI — your vocabulary comes with you, and words you master here light up 🗣️ there.'
+                : "Enter your account email and we'll send you a link to set a new password."}
+            </p>
             {!isCloudConfigured && <p className="text-amber-700 text-sm">Cloud is not configured (missing SUPABASE_* env).</p>}
             <form onSubmit={handleAuth} className="space-y-4">
               <input type="email" required value={email} onChange={e => setEmail(e.target.value)} placeholder="Email"
                 className="w-full p-4 bg-stone-50 border border-stone-200 rounded-xl outline-none focus:ring-2 focus:ring-stone-900" />
-              <input type="password" required value={password} onChange={e => setPassword(e.target.value)} placeholder="Password"
-                className="w-full p-4 bg-stone-50 border border-stone-200 rounded-xl outline-none focus:ring-2 focus:ring-stone-900" />
+              {authView === 'signin' && (
+                <input type="password" required value={password} onChange={e => setPassword(e.target.value)} placeholder="Password"
+                  className="w-full p-4 bg-stone-50 border border-stone-200 rounded-xl outline-none focus:ring-2 focus:ring-stone-900" />
+              )}
               {authMessage && <p className="text-sm text-amber-700">{authMessage}</p>}
               <button type="submit" disabled={authBusy}
                 className="w-full py-4 bg-stone-900 text-white rounded-xl font-bold hover:bg-black transition-colors disabled:opacity-50 flex items-center justify-center gap-2">
-                {authBusy && <Loader2 className="w-4 h-4 animate-spin" />} Sign In
+                {authBusy && <Loader2 className="w-4 h-4 animate-spin" />} {authView === 'signin' ? 'Sign In' : 'Email Me a Reset Link'}
+              </button>
+              <button
+                type="button"
+                onClick={() => { setAuthView(authView === 'signin' ? 'forgot' : 'signin'); setAuthMessage(null); }}
+                className="w-full text-sm text-stone-500 hover:text-stone-900"
+              >
+                {authView === 'signin' ? 'Forgot password?' : '← Back to sign in'}
+              </button>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Set-new-password modal (opened by the reset-email link) */}
+      {showReset && (
+        <div className="fixed inset-0 bg-stone-900/60 backdrop-blur-sm z-[70] flex items-center justify-center p-4">
+          <div className="bg-white w-full max-w-md rounded-2xl shadow-2xl p-8 space-y-5">
+            <div className="flex justify-between items-center">
+              <h3 className="text-2xl font-serif font-bold">Set New Password</h3>
+              <button onClick={() => setShowReset(false)} className="text-stone-400 hover:text-stone-900"><X /></button>
+            </div>
+            <p className="text-stone-500 text-sm">Your reset link signed you in. Choose a new password to finish.</p>
+            <form onSubmit={handleSetNewPassword} className="space-y-4">
+              <input type="password" required minLength={6} value={newPassword} onChange={e => setNewPassword(e.target.value)}
+                placeholder="New password (min 6 characters)" autoFocus
+                className="w-full p-4 bg-stone-50 border border-stone-200 rounded-xl outline-none focus:ring-2 focus:ring-stone-900" />
+              {resetMessage && <p className="text-sm text-amber-700">{resetMessage}</p>}
+              <button type="submit" disabled={resetBusy}
+                className="w-full py-4 bg-stone-900 text-white rounded-xl font-bold hover:bg-black transition-colors disabled:opacity-50 flex items-center justify-center gap-2">
+                {resetBusy && <Loader2 className="w-4 h-4 animate-spin" />} Save New Password
               </button>
             </form>
           </div>
