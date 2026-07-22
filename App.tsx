@@ -38,6 +38,8 @@ const App: React.FC = () => {
   const [password, setPassword] = useState('');
   const [authBusy, setAuthBusy] = useState(false);
   const [authMessage, setAuthMessage] = useState<string | null>(null);
+  const [codeSent, setCodeSent] = useState(false);
+  const [otpCode, setOtpCode] = useState('');
 
   // Password recovery (arrived via reset-email link)
   const [showReset, setShowReset] = useState(false);
@@ -135,9 +137,20 @@ const App: React.FC = () => {
     setAuthMessage(null);
     try {
       if (authView === 'forgot') {
-        const { error } = await supabase.auth.resetPasswordForEmail(email, { redirectTo: window.location.origin });
-        if (error) throw error;
-        setAuthMessage('Reset link sent — check your inbox (and spam folder), then open the link in this browser.');
+        if (!codeSent) {
+          const { error } = await supabase.auth.resetPasswordForEmail(email, { redirectTo: window.location.origin });
+          if (error) throw error;
+          setCodeSent(true);
+          setAuthMessage('Email sent! Enter the 6-digit code from it below. (Check spam if you don\'t see it.)');
+        } else {
+          const { error } = await supabase.auth.verifyOtp({ email, token: otpCode.trim(), type: 'recovery' });
+          if (error) throw error;
+          setShowAuth(false);
+          setOtpCode('');
+          setCodeSent(false);
+          setAuthView('signin');
+          setShowReset(true);
+        }
       } else {
         const { error } = await supabase.auth.signInWithPassword({ email, password });
         if (error) throw error;
@@ -325,7 +338,9 @@ const App: React.FC = () => {
             <p className="text-stone-500 text-sm">
               {authView === 'signin'
                 ? 'Use the same account as LexiAI — your vocabulary comes with you, and words you master here light up 🗣️ there.'
-                : "Enter your account email and we'll send you a link to set a new password."}
+                : codeSent
+                  ? 'Check your email for a 6-digit code and enter it below.'
+                  : "Enter your account email and we'll send you a reset code."}
             </p>
             {!isCloudConfigured && <p className="text-amber-700 text-sm">Cloud is not configured (missing SUPABASE_* env).</p>}
             <form onSubmit={handleAuth} className="space-y-4">
@@ -335,14 +350,25 @@ const App: React.FC = () => {
                 <input type="password" required value={password} onChange={e => setPassword(e.target.value)} placeholder="Password"
                   className="w-full p-4 bg-stone-50 border border-stone-200 rounded-xl outline-none focus:ring-2 focus:ring-stone-900" />
               )}
+              {authView === 'forgot' && codeSent && (
+                <input type="text" required inputMode="numeric" autoComplete="one-time-code" maxLength={6}
+                  value={otpCode} onChange={e => setOtpCode(e.target.value.replace(/\D/g, ''))} placeholder="6-digit code" autoFocus
+                  className="w-full p-4 bg-stone-50 border border-stone-200 rounded-xl outline-none focus:ring-2 focus:ring-stone-900 text-center text-2xl tracking-[0.5em] font-mono" />
+              )}
               {authMessage && <p className="text-sm text-amber-700">{authMessage}</p>}
               <button type="submit" disabled={authBusy}
                 className="w-full py-4 bg-stone-900 text-white rounded-xl font-bold hover:bg-black transition-colors disabled:opacity-50 flex items-center justify-center gap-2">
-                {authBusy && <Loader2 className="w-4 h-4 animate-spin" />} {authView === 'signin' ? 'Sign In' : 'Email Me a Reset Link'}
+                {authBusy && <Loader2 className="w-4 h-4 animate-spin" />} {authView === 'signin' ? 'Sign In' : codeSent ? 'Verify Code' : 'Email Me a Reset Code'}
               </button>
+              {authView === 'forgot' && codeSent && (
+                <button type="button" onClick={() => { setCodeSent(false); setOtpCode(''); setAuthMessage(null); }}
+                  className="w-full text-sm text-stone-500 hover:text-stone-900">
+                  Didn't get it? Send again
+                </button>
+              )}
               <button
                 type="button"
-                onClick={() => { setAuthView(authView === 'signin' ? 'forgot' : 'signin'); setAuthMessage(null); }}
+                onClick={() => { setAuthView(authView === 'signin' ? 'forgot' : 'signin'); setCodeSent(false); setOtpCode(''); setAuthMessage(null); }}
                 className="w-full text-sm text-stone-500 hover:text-stone-900"
               >
                 {authView === 'signin' ? 'Forgot password?' : '← Back to sign in'}
