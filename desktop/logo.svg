@@ -1,8 +1,13 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+<!-- 80% artwork on a transparent canvas, per macOS app-icon convention (matches Writing Station / LexiAI) -->
+<g transform="translate(102.4 102.4) scale(0.8)">
+
 <defs><linearGradient id="bg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#FDBA74"/><stop offset="1" stop-color="#F0925A"/></linearGradient>
 <clipPath id="c"><rect width="1024" height="1024" rx="230"/></clipPath></defs>
 <g clip-path="url(#c)"><rect width="1024" height="1024" fill="url(#bg)"/><circle cx="512" cy="512" r="400" fill="none" stroke="#7C2D12" stroke-opacity=".18" stroke-width="3"/></g>
 <g fill="none" stroke="#7C2D12" stroke-linecap="round" stroke-width="24">
 <path d="M 596 452 A 84 84 0 0 1 596 572"/><path d="M 640 412 A 140 140 0 0 1 640 612" stroke-opacity=".7"/><path d="M 684 372 A 196 196 0 0 1 684 652" stroke-opacity=".4"/></g>
 <text x="418" y="640" text-anchor="middle" font-family="'Playfair Display','Didot','Bodoni 72','Times New Roman',serif" font-weight="700" font-size="380" fill="#7C2D12">S</text>
+
+</g>
 </svg>
