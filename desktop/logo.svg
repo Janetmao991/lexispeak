@@ -1,36 +1,8 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
-  <!-- LexiSpeak — Speaking Studio. Warm orange ground (Janet: "not another black icon"),
-       cream serif S, ink sound-wave arcs. Family: Playfair serif · cream #FDFBF7 · orange accent. -->
-  <defs>
-    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0" stop-color="#F59E0B"/>
-      <stop offset="0.55" stop-color="#EA7A1A"/>
-      <stop offset="1" stop-color="#C2571B"/>
-    </linearGradient>
-    <linearGradient id="wave" x1="0" y1="0" x2="1" y2="0">
-      <stop offset="0" stop-color="#FDFBF7"/>
-      <stop offset="1" stop-color="#FDFBF7"/>
-    </linearGradient>
-    <clipPath id="squircle"><rect x="0" y="0" width="1024" height="1024" rx="230" ry="230"/></clipPath>
-  </defs>
-
-  <g clip-path="url(#squircle)">
-    <rect width="1024" height="1024" fill="url(#bg)"/>
-    <!-- soft highlight top-left for depth -->
-    <circle cx="300" cy="260" r="520" fill="#FFFFFF" fill-opacity="0.08"/>
-    <!-- subtle ring, echoing Writing Station -->
-    <circle cx="512" cy="512" r="418" fill="none" stroke="#FDFBF7" stroke-opacity="0.16" stroke-width="3"/>
-  </g>
-
-  <!-- three sound-wave arcs, cream, fading outward -->
-  <g fill="none" stroke="#FDFBF7" stroke-linecap="round">
-    <path d="M 640 430 A 120 120 0 0 1 640 594" stroke-width="30"/>
-    <path d="M 700 372 A 200 200 0 0 1 700 652" stroke-width="30" stroke-opacity="0.75"/>
-    <path d="M 760 314 A 280 280 0 0 1 760 710" stroke-width="30" stroke-opacity="0.45"/>
-  </g>
-
-  <!-- serif S in deep ink for contrast on orange -->
-  <text x="392" y="672" text-anchor="middle"
-        font-family="'Playfair Display','Didot','Bodoni 72','Times New Roman',serif"
-        font-weight="700" font-size="520" fill="#1c1917">S</text>
+<defs><linearGradient id="bg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#FDBA74"/><stop offset="1" stop-color="#F0925A"/></linearGradient>
+<clipPath id="c"><rect width="1024" height="1024" rx="230"/></clipPath></defs>
+<g clip-path="url(#c)"><rect width="1024" height="1024" fill="url(#bg)"/><circle cx="512" cy="512" r="400" fill="none" stroke="#7C2D12" stroke-opacity=".18" stroke-width="3"/></g>
+<g fill="none" stroke="#7C2D12" stroke-linecap="round" stroke-width="24">
+<path d="M 596 452 A 84 84 0 0 1 596 572"/><path d="M 640 412 A 140 140 0 0 1 640 612" stroke-opacity=".7"/><path d="M 684 372 A 196 196 0 0 1 684 652" stroke-opacity=".4"/></g>
+<text x="418" y="640" text-anchor="middle" font-family="'Playfair Display','Didot','Bodoni 72','Times New Roman',serif" font-weight="700" font-size="380" fill="#7C2D12">S</text>
 </svg>
