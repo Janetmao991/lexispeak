@@ -3,3 +3,8 @@ dist/
 .env
 .env.local
 .DS_Store
+
+# local desktop shell build outputs
+desktop/*.app
+desktop/*.icns
+desktop/logo-1024.png

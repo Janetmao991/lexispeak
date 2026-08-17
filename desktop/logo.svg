@@ -1,0 +1,33 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <!-- LexiSpeak — Speaking Studio. Family language: cream #FDFBF7 · ink #1c1917 · Playfair serif · warm orange accent.
+       Concept: a serif "S" that is also a speaking voice — three sound-wave arcs radiate from it. -->
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#1F1B17"/>
+      <stop offset="1" stop-color="#0F0D0B"/>
+    </linearGradient>
+    <linearGradient id="wave" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#F59E0B"/>
+      <stop offset="1" stop-color="#EA580C"/>
+    </linearGradient>
+    <clipPath id="squircle"><rect x="0" y="0" width="1024" height="1024" rx="230" ry="230"/></clipPath>
+  </defs>
+
+  <g clip-path="url(#squircle)">
+    <rect width="1024" height="1024" fill="url(#bg)"/>
+    <!-- subtle inner vignette ring, echoing Writing Station's ring motif -->
+    <circle cx="512" cy="512" r="418" fill="none" stroke="#FDFBF7" stroke-opacity="0.07" stroke-width="3"/>
+  </g>
+
+  <!-- three sound-wave arcs, radiating to the right of the S -->
+  <g fill="none" stroke="url(#wave)" stroke-linecap="round">
+    <path d="M 640 430 A 120 120 0 0 1 640 594" stroke-width="30"/>
+    <path d="M 700 372 A 200 200 0 0 1 700 652" stroke-width="30" stroke-opacity="0.72"/>
+    <path d="M 760 314 A 280 280 0 0 1 760 710" stroke-width="30" stroke-opacity="0.42"/>
+  </g>
+
+  <!-- serif S, optically centred left of the waves -->
+  <text x="392" y="672" text-anchor="middle"
+        font-family="'Playfair Display','Didot','Bodoni 72','Times New Roman',serif"
+        font-weight="700" font-size="520" fill="#FDFBF7">S</text>
+</svg>
