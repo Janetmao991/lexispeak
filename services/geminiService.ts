@@ -178,10 +178,11 @@ const feedbackSchema = {
     }, required: ['quote', 'fix', 'why'] } },
     pronunciation: { type: Type.ARRAY, items: { type: Type.OBJECT, properties: {
       clipIndex: { type: Type.NUMBER }, word: { type: Type.STRING }, note: { type: Type.STRING },
-    }, required: ['clipIndex', 'word', 'note'] } },
+      ipa: { type: Type.STRING }, heardAs: { type: Type.STRING },
+    }, required: ['clipIndex', 'word', 'note', 'ipa'] } },
     idioms: { type: Type.ARRAY, items: { type: Type.OBJECT, properties: {
-      original: { type: Type.STRING }, upgraded: { type: Type.STRING },
-    }, required: ['original', 'upgraded'] } },
+      original: { type: Type.STRING }, upgraded: { type: Type.STRING }, why: { type: Type.STRING },
+    }, required: ['original', 'upgraded', 'why'] } },
     targetWords: { type: Type.ARRAY, items: { type: Type.OBJECT, properties: {
       word: { type: Type.STRING }, used: { type: Type.BOOLEAN }, usedWell: { type: Type.BOOLEAN }, comment: { type: Type.STRING },
     }, required: ['word', 'used', 'usedWell', 'comment'] } },
@@ -207,8 +208,8 @@ Attached are up to ${clips.length} audio clips of the LEARNER's actual speech (i
 
 Produce a coaching report:
 1. grammar: up to 5 issues — exact quote from the learner, the fix, and a one-line why. Only real errors or clearly unnatural phrasing; skip nitpicks.
-2. pronunciation: listen to the audio clips. Note specific words that were mispronounced, oddly stressed, or unclear (clipIndex + word + short note with the correct pronunciation hint). If pronunciation is genuinely clean, return fewer or no notes — don't invent problems.
-3. idioms: up to 4 places where a native speaker would phrase it differently — original vs upgraded, keep the learner's meaning.
+2. pronunciation: listen to the audio clips. Note specific words that were mispronounced, oddly stressed, or unclear: clipIndex + word + "ipa" = the CORRECT American-English pronunciation in IPA with stress marks (e.g. "/kəˈlæt.ər.əl/") + "heardAs" = how the learner actually said it (IPA or a plain respelling like "col-LAT-er-al", stress in caps) + a short note on the fix. If pronunciation is genuinely clean, return fewer or no notes — don't invent problems.
+3. idioms: up to 4 places where a native speaker would phrase it differently — original vs upgraded, keep the learner's meaning; "why" = one line on the nuance (register, collocation, why natives prefer it).
 4. targetWords: for each target word — did the LEARNER use it (any inflection), was it used well, one comment.
 5. overall: 2-3 sentences on fluency and communication, encouraging but honest. focusTip: the single highest-leverage thing to work on next. score: /100 for overall spoken performance.` }];
 
@@ -258,7 +259,8 @@ export const stopSpeech = () => {
   }
 };
 
-export const speak = async (text: string, voiceName: string): Promise<void> => {
+/** Fetch TTS audio (base64 PCM) without playing it — lets callers prefetch in parallel. */
+export const fetchSpeech = async (text: string, voiceName: string): Promise<string> => {
   const ai = getAi();
   const response = await ai.models.generateContent({
     model: TTS_MODEL,
@@ -270,6 +272,11 @@ export const speak = async (text: string, voiceName: string): Promise<void> => {
   });
   const base64Audio = response.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
   if (!base64Audio) throw new Error('No audio returned');
+  return base64Audio;
+};
+
+/** Play previously fetched TTS audio. */
+export const playSpeech = async (base64Audio: string): Promise<void> => {
   stopSpeech();
   const AudioContextClass = (window as any).AudioContext || (window as any).webkitAudioContext;
   const ctx = new AudioContextClass({ sampleRate: 24000 });
@@ -284,6 +291,21 @@ export const speak = async (text: string, voiceName: string): Promise<void> => {
       resolve();
     };
     source.start();
+  });
+};
+
+export const speak = async (text: string, voiceName: string): Promise<void> =>
+  playSpeech(await fetchSpeech(text, voiceName));
+
+/** Browser-TTS fallback (used when Gemini TTS fails). */
+export const speakFallback = (text: string): Promise<void> => {
+  if (!('speechSynthesis' in window)) return Promise.resolve();
+  return new Promise<void>(resolve => {
+    const u = new SpeechSynthesisUtterance(text);
+    u.lang = 'en-US';
+    u.onend = () => resolve();
+    u.onerror = () => resolve();
+    window.speechSynthesis.speak(u);
   });
 };
 

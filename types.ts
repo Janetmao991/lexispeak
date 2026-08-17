@@ -44,11 +44,28 @@ export interface PronunciationNote {
   clipIndex: number;
   word: string;
   note: string;
+  /** Correct pronunciation in IPA, e.g. "/ˈkɒl.ə.tər.əl/" (added 2026-08-16). */
+  ipa?: string;
+  /** How the learner actually said it, in IPA or plain respelling — optional. */
+  heardAs?: string;
 }
 
 export interface IdiomUpgrade {
   original: string;
   upgraded: string;
+  /** One-line note on when/why the native phrasing fits (added 2026-08-16). */
+  why?: string;
+}
+
+/** A saved "Say it like a native" phrase — the Phrase Notebook (added 2026-08-16). */
+export interface SavedPhrase {
+  id: string;
+  original: string;
+  upgraded: string;
+  why?: string;
+  savedAt: number;
+  topic?: string;
+  mode?: string;
 }
 
 export interface TargetWordVerdict {

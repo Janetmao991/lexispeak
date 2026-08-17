@@ -7,11 +7,12 @@ import { Feedback } from './components/Feedback';
 import { supabase, isCloudConfigured } from './services/supabaseClient';
 import { wordsService } from './services/wordsService';
 import { historyService } from './services/historyService';
+import { phrasesService } from './services/phrasesService';
 import { hasApiKey } from './services/geminiService';
-import { Mic2, X, Loader2, LogOut, Settings as SettingsIcon, KeyRound, Eye, EyeOff, Check, ExternalLink, History as HistoryIcon, MessagesSquare, Briefcase, Users, Coffee, Cloud, CloudOff } from 'lucide-react';
+import { Mic2, X, Loader2, LogOut, Settings as SettingsIcon, KeyRound, Eye, EyeOff, Check, ExternalLink, History as HistoryIcon, BookMarked, Trash2, MessagesSquare, Briefcase, Users, Coffee, Cloud, CloudOff } from 'lucide-react';
 import type { Session as SupaSession } from '@supabase/supabase-js';
 
-type Screen = 'home' | 'session' | 'feedback' | 'history';
+type Screen = 'home' | 'session' | 'feedback' | 'history' | 'phrases';
 
 const MODE_ICONS: Record<string, React.ReactNode> = {
   casual: <Coffee className="w-6 h-6" />,
@@ -55,6 +56,7 @@ const App: React.FC = () => {
   const [keyConfigured, setKeyConfigured] = useState(() => hasApiKey());
 
   const [history, setHistory] = useState<SessionRecord[]>(() => historyService.getAll());
+  const [phrases, setPhrases] = useState(() => phrasesService.getAll());
 
   useEffect(() => {
     if (!supabase) return;
@@ -197,6 +199,9 @@ const App: React.FC = () => {
             <button onClick={() => setScreen('history')} className={`p-2 rounded-lg transition-colors ${screen === 'history' ? 'bg-stone-900 text-white' : 'text-stone-400 hover:text-stone-900'}`} title="Session history">
               <HistoryIcon className="w-4 h-4" />
             </button>
+            <button onClick={() => { setPhrases(phrasesService.getAll()); setScreen('phrases'); }} className={`p-2 rounded-lg transition-colors ${screen === 'phrases' ? 'bg-stone-900 text-white' : 'text-stone-400 hover:text-stone-900'}`} title="Phrase notebook">
+              <BookMarked className="w-4 h-4" />
+            </button>
             <button onClick={() => setShowSettings(true)} className="p-2 rounded-lg text-stone-400 hover:text-stone-900" title="Settings">
               <SettingsIcon className="w-4 h-4" />
             </button>
@@ -290,6 +295,7 @@ const App: React.FC = () => {
             report={lastReport}
             plan={lastPlan}
             modeLabel={activeMode.label}
+            onPhrasesChanged={() => setPhrases(phrasesService.getAll())}
             onNewSession={() => setScreen('session')}
             onHome={() => setScreen('home')}
           />
@@ -322,6 +328,38 @@ const App: React.FC = () => {
                   {r.report.score}
                 </span>
               </button>
+            ))}
+          </div>
+        )}
+
+        {screen === 'phrases' && (
+          <div className="max-w-3xl mx-auto px-4 space-y-4 animate-fade-in">
+            <div className="flex items-end justify-between gap-4">
+              <div>
+                <h2 className="text-2xl font-serif font-bold">Phrase Notebook</h2>
+                <p className="text-sm text-stone-500 font-serif italic">Native phrasings you chose to keep — reread before your next session.</p>
+              </div>
+              <span className="text-xs font-bold uppercase tracking-widest text-stone-400">{phrases.length} saved</span>
+            </div>
+            {phrases.length === 0 && (
+              <p className="text-stone-400 font-serif italic py-10 text-center">Nothing saved yet — tap “Save” on any “Say It Like a Native” upgrade in a coaching report.</p>
+            )}
+            {phrases.map(p => (
+              <div key={p.id} className="bg-white rounded-2xl border border-stone-100 shadow-sm p-5 space-y-2">
+                <div className="flex items-start justify-between gap-4">
+                  <div className="space-y-1 min-w-0">
+                    <p className="text-stone-400 font-serif italic line-through decoration-stone-300">“{p.original}”</p>
+                    <p className="text-stone-900 font-serif font-semibold text-lg">“{p.upgraded}”</p>
+                    {p.why && <p className="text-xs text-stone-500 leading-relaxed">{p.why}</p>}
+                  </div>
+                  <button onClick={() => { phrasesService.remove(p.id); setPhrases(phrasesService.getAll()); }} className="p-2 rounded-lg text-stone-300 hover:text-red-500 hover:bg-red-50 shrink-0" title="Remove">
+                    <Trash2 className="w-4 h-4" />
+                  </button>
+                </div>
+                <p className="text-[10px] font-bold uppercase tracking-widest text-stone-300">
+                  {p.mode ? `${p.mode} · ` : ''}{p.topic ? `${p.topic} · ` : ''}{new Date(p.savedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                </p>
+              </div>
             ))}
           </div>
         )}

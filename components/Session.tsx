@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { ModeDef, SessionPlan, Turn, FeedbackReport } from '../types';
-import { planSession, nextTurns, transcribeAudio, gradeSession, speakSafe, stopSpeech, friendlyError } from '../services/geminiService';
+import { planSession, nextTurns, transcribeAudio, gradeSession, speakSafe, stopSpeech, friendlyError, fetchSpeech, playSpeech, speakFallback } from '../services/geminiService';
 import { startRecording, RecorderHandle } from '../services/recorderService';
 import { Mic, Square, Send, Loader2, Volume2, VolumeX, Flag, Shuffle, ArrowLeft } from 'lucide-react';
 
@@ -42,6 +42,21 @@ export const Session: React.FC<SessionProps> = ({ mode, role, candidateWords, on
     if (!voiceOnRef.current) return;
     for (const t of turns) {
       await speakSafe(t.text, voiceOf(t.speaker));
+    }
+  };
+
+  // Reveal replies in sync with their audio: prefetch every clip in parallel the
+  // moment the text arrives, then show turn N exactly when its audio starts. The
+  // learner sees and hears each line together instead of reading, then waiting.
+  const revealAndSpeak = async (turns: Turn[]) => {
+    if (!voiceOnRef.current) { setHistory(prev => [...prev, ...turns]); return; }
+    const clips = turns.map(t => fetchSpeech(t.text, voiceOf(t.speaker)).catch(() => null));
+    for (let i = 0; i < turns.length; i++) {
+      const audio = await clips[i];
+      setHistory(prev => [...prev, turns[i]]);
+      if (!voiceOnRef.current) continue;
+      if (audio) { try { await playSpeech(audio); } catch { /* skip */ } }
+      else await speakFallback(turns[i].text);
     }
   };
 
@@ -88,8 +103,8 @@ export const Session: React.FC<SessionProps> = ({ mode, role, candidateWords, on
     setError(null);
     try {
       const replies = await nextTurns(mode, plan, newHistory, role);
-      setHistory(prev => [...prev, ...replies]);
-      speakTurns(replies);
+      setSending(false);
+      await revealAndSpeak(replies);
     } catch (e: any) {
       setError(friendlyError(String(e?.message || '')));
     } finally {

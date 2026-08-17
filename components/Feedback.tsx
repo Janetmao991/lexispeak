@@ -1,17 +1,52 @@
 
-import React from 'react';
+import React, { useState } from 'react';
 import { FeedbackReport, SessionPlan } from '../types';
-import { Award, Mic, Sparkles, Target, Lightbulb, ArrowLeft, RotateCcw, CheckCircle2, XCircle } from 'lucide-react';
+import { Award, Mic, Sparkles, Target, Lightbulb, ArrowLeft, RotateCcw, CheckCircle2, XCircle, Volume2, Loader2, BookmarkPlus, BookmarkCheck } from 'lucide-react';
+import { speakSafe } from '../services/geminiService';
+import { phrasesService } from '../services/phrasesService';
 
 interface FeedbackProps {
   report: FeedbackReport;
   plan: SessionPlan;
   modeLabel: string;
+  onPhrasesChanged?: () => void;
   onNewSession: () => void;
   onHome: () => void;
 }
 
-export const Feedback: React.FC<FeedbackProps> = ({ report, plan, modeLabel, onNewSession, onHome }) => (
+// Speak a word/phrase in a clear, neutral voice so the learner can hear the correct pronunciation.
+const SayButton: React.FC<{ text: string; label?: string }> = ({ text, label }) => {
+  const [busy, setBusy] = useState(false);
+  return (
+    <button
+      onClick={async () => { if (busy) return; setBusy(true); try { await speakSafe(text, 'Kore'); } finally { setBusy(false); } }}
+      className="inline-flex items-center gap-1 text-[11px] font-bold uppercase tracking-wider text-stone-500 hover:text-stone-900 bg-stone-100 hover:bg-stone-200 px-2 py-1 rounded-full transition-colors"
+      title="Hear the correct pronunciation"
+    >
+      {busy ? <Loader2 className="w-3 h-3 animate-spin" /> : <Volume2 className="w-3 h-3" />}
+      {label || 'Hear it'}
+    </button>
+  );
+};
+
+const SavePhraseButton: React.FC<{ original: string; upgraded: string; why?: string; topic?: string; mode?: string; onChanged?: () => void }> =
+  ({ original, upgraded, why, topic, mode, onChanged }) => {
+  const [saved, setSaved] = useState(() => phrasesService.has(upgraded));
+  return (
+    <button
+      onClick={() => { if (saved) return; phrasesService.add({ original, upgraded, why, topic, mode }); setSaved(true); onChanged?.(); }}
+      className={`inline-flex items-center gap-1 text-[11px] font-bold uppercase tracking-wider px-2.5 py-1 rounded-full border transition-colors ${
+        saved ? 'bg-emerald-50 border-emerald-100 text-emerald-700 cursor-default' : 'bg-white border-stone-200 text-stone-500 hover:border-stone-900 hover:text-stone-900'
+      }`}
+      title={saved ? 'In your Phrase Notebook' : 'Save to Phrase Notebook'}
+    >
+      {saved ? <BookmarkCheck className="w-3 h-3" /> : <BookmarkPlus className="w-3 h-3" />}
+      {saved ? 'Saved' : 'Save'}
+    </button>
+  );
+};
+
+export const Feedback: React.FC<FeedbackProps> = ({ report, plan, modeLabel, onPhrasesChanged, onNewSession, onHome }) => (
   <div className="max-w-3xl mx-auto px-4 space-y-6 animate-fade-in-up pb-16">
     {/* Score header */}
     <div className="bg-white rounded-2xl border border-stone-100 shadow-sm p-8 flex items-center justify-between gap-6 flex-wrap">
@@ -66,10 +101,15 @@ export const Feedback: React.FC<FeedbackProps> = ({ report, plan, modeLabel, onN
         report.pronunciation.map((p, i) => (
           <div key={i} className="flex items-start gap-3">
             <span className="shrink-0 text-xs font-bold bg-stone-100 text-stone-500 px-2 py-1 rounded-full">clip {p.clipIndex + 1}</span>
-            <p className="text-sm text-stone-700 leading-relaxed">
-              <span className="font-serif font-bold text-stone-900">{p.word}</span>
-              <span className="text-stone-500"> — {p.note}</span>
-            </p>
+            <div className="text-sm text-stone-700 leading-relaxed space-y-1 min-w-0">
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="font-serif font-bold text-stone-900 text-base">{p.word}</span>
+                {p.ipa && <span className="font-mono text-xs text-emerald-700 bg-emerald-50 border border-emerald-100 px-2 py-0.5 rounded-md">{p.ipa}</span>}
+                <SayButton text={p.word} />
+              </div>
+              {p.heardAs && <p className="text-xs text-stone-400">You said: <span className="font-mono line-through decoration-stone-300">{p.heardAs}</span></p>}
+              <p className="text-stone-500">{p.note}</p>
+            </div>
           </div>
         ))
       )}
@@ -82,9 +122,16 @@ export const Feedback: React.FC<FeedbackProps> = ({ report, plan, modeLabel, onN
           <Sparkles className="w-4 h-4" /> Say It Like a Native
         </h3>
         {report.idioms.map((u, i) => (
-          <div key={i} className="grid md:grid-cols-2 gap-2 md:gap-6 items-start border-b border-stone-50 pb-4 last:border-0 last:pb-0">
-            <p className="text-stone-500 font-serif italic">"{u.original}"</p>
-            <p className="text-stone-900 font-serif font-semibold">"{u.upgraded}"</p>
+          <div key={i} className="border-b border-stone-50 pb-4 last:border-0 last:pb-0 space-y-2">
+            <div className="grid md:grid-cols-2 gap-2 md:gap-6 items-start">
+              <p className="text-stone-500 font-serif italic">"{u.original}"</p>
+              <p className="text-stone-900 font-serif font-semibold">"{u.upgraded}"</p>
+            </div>
+            <div className="flex items-center gap-2 flex-wrap md:pl-[calc(50%+0.75rem)]">
+              {u.why && <p className="text-xs text-stone-500 basis-full">{u.why}</p>}
+              <SayButton text={u.upgraded} />
+              <SavePhraseButton original={u.original} upgraded={u.upgraded} why={u.why} topic={plan.topic} mode={modeLabel} onChanged={onPhrasesChanged} />
+            </div>
           </div>
         ))}
       </section>
