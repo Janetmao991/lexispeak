@@ -94,4 +94,6 @@ export interface SessionRecord {
   date: string; // ISO
   userTurns: number;
   report: FeedbackReport;
+  /** Everything the learner said, in order — powers the annotated transcript (added 2026-08-25). */
+  transcript?: string[];
 }

@@ -1,18 +1,59 @@
 
 import React, { useState } from 'react';
-import { FeedbackReport, SessionPlan } from '../types';
-import { Award, Mic, Sparkles, Target, Lightbulb, ArrowLeft, RotateCcw, CheckCircle2, XCircle, Volume2, Loader2, BookmarkPlus, BookmarkCheck } from 'lucide-react';
+import { FeedbackReport, SessionPlan, GrammarNote, IdiomUpgrade } from '../types';
+import { Award, Mic, Sparkles, Target, Lightbulb, ArrowLeft, RotateCcw, CheckCircle2, XCircle, Volume2, Loader2, BookmarkPlus, BookmarkCheck, Quote } from 'lucide-react';
 import { speakSafe } from '../services/geminiService';
 import { phrasesService } from '../services/phrasesService';
 
 interface FeedbackProps {
   report: FeedbackReport;
   plan: SessionPlan;
+  /** Everything the learner said, in order (may be empty for pre-transcript history records). */
+  transcript?: string[];
   modeLabel: string;
   onPhrasesChanged?: () => void;
   onNewSession: () => void;
   onHome: () => void;
 }
+
+// Mark up one spoken turn: grammar quotes in red, idiom originals in amber.
+// The tooltip carries the fix so the transcript reads as a conclusive review.
+const annotateTurn = (text: string, grammar: GrammarNote[], idioms: IdiomUpgrade[]): React.ReactNode => {
+  type Mark = { start: number; end: number; kind: 'grammar' | 'idiom'; tip: string };
+  const marks: Mark[] = [];
+  const lower = text.toLowerCase();
+  const add = (needle: string, kind: Mark['kind'], tip: string) => {
+    const n = needle.trim().toLowerCase();
+    if (n.length < 3) return;
+    const idx = lower.indexOf(n);
+    if (idx >= 0) marks.push({ start: idx, end: idx + n.length, kind, tip });
+  };
+  grammar.forEach(g => add(g.quote, 'grammar', `→ "${g.fix}" — ${g.why}`));
+  idioms.forEach(u => add(u.original, 'idiom', `→ "${u.upgraded}"${u.why ? ' — ' + u.why : ''}`));
+  marks.sort((a, b) => a.start - b.start);
+  const kept: Mark[] = [];
+  for (const m of marks) if (!kept.length || m.start >= kept[kept.length - 1].end) kept.push(m);
+  if (!kept.length) return text;
+  const out: React.ReactNode[] = [];
+  let pos = 0;
+  kept.forEach((m, i) => {
+    if (m.start > pos) out.push(text.slice(pos, m.start));
+    out.push(
+      <span
+        key={i}
+        title={m.tip}
+        className={`underline decoration-2 underline-offset-2 rounded-sm px-0.5 cursor-help ${
+          m.kind === 'grammar' ? 'bg-red-50 text-red-700 decoration-red-300' : 'bg-amber-50 text-amber-800 decoration-amber-300'
+        }`}
+      >
+        {text.slice(m.start, m.end)}
+      </span>
+    );
+    pos = m.end;
+  });
+  if (pos < text.length) out.push(text.slice(pos));
+  return out;
+};
 
 // Speak a word/phrase in a clear, neutral voice so the learner can hear the correct pronunciation.
 const SayButton: React.FC<{ text: string; label?: string }> = ({ text, label }) => {
@@ -46,7 +87,7 @@ const SavePhraseButton: React.FC<{ original: string; upgraded: string; why?: str
   );
 };
 
-export const Feedback: React.FC<FeedbackProps> = ({ report, plan, modeLabel, onPhrasesChanged, onNewSession, onHome }) => (
+export const Feedback: React.FC<FeedbackProps> = ({ report, plan, transcript, modeLabel, onPhrasesChanged, onNewSession, onHome }) => (
   <div className="max-w-3xl mx-auto px-4 space-y-6 animate-fade-in-up pb-16">
     {/* Score header */}
     <div className="bg-white rounded-2xl border border-stone-100 shadow-sm p-8 flex items-center justify-between gap-6 flex-wrap">
@@ -73,6 +114,32 @@ export const Feedback: React.FC<FeedbackProps> = ({ report, plan, modeLabel, onP
         <p className="font-serif leading-relaxed">{report.focusTip}</p>
       </div>
     </div>
+
+    {/* Everything you said — annotated transcript */}
+    {transcript && transcript.length > 0 && (
+      <section className="bg-white rounded-2xl border border-stone-100 shadow-sm p-8 space-y-5">
+        <div className="flex items-center justify-between gap-3 flex-wrap">
+          <h3 className="text-[11px] font-bold uppercase tracking-[0.25em] text-stone-400 flex items-center gap-2">
+            <Quote className="w-4 h-4" /> Everything You Said
+          </h3>
+          <div className="flex items-center gap-4 text-[11px] text-stone-400">
+            <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full bg-red-300"></span> fix this</span>
+            <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full bg-amber-300"></span> more native</span>
+          </div>
+        </div>
+        <div className="space-y-4">
+          {transcript.map((t, i) => (
+            <div key={i} className="flex items-start gap-3">
+              <span className="shrink-0 text-[10px] font-bold text-stone-300 font-mono mt-1.5 w-5 text-right">{i + 1}</span>
+              <p className="font-serif text-stone-800 leading-relaxed text-[15px]">
+                {annotateTurn(t, report.grammar, report.idioms)}
+              </p>
+            </div>
+          ))}
+        </div>
+        <p className="text-xs text-stone-400">Hover a highlight to see the fix — details in the sections below.</p>
+      </section>
+    )}
 
     {/* Grammar & expression */}
     {report.grammar.length > 0 && (

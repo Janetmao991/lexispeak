@@ -32,6 +32,7 @@ const App: React.FC = () => {
   const [role, setRole] = useState('Investment Banking Analyst');
   const [lastPlan, setLastPlan] = useState<SessionPlan | null>(null);
   const [lastReport, setLastReport] = useState<FeedbackReport | null>(null);
+  const [lastTranscript, setLastTranscript] = useState<string[]>([]);
 
   // Auth modal
   const [showAuth, setShowAuth] = useState(false);
@@ -112,16 +113,19 @@ const App: React.FC = () => {
   };
 
   const handleFinished = async (plan: SessionPlan, hist: Turn[], report: FeedbackReport) => {
+    const spoken = hist.filter(t => t.speaker === 'You').map(t => t.text);
     setLastPlan(plan);
     setLastReport(report);
+    setLastTranscript(spoken);
     setScreen('feedback');
     const record: SessionRecord = {
       id: `sess_${Date.now()}`,
       mode: activeMode!.id,
       topic: plan.topic,
       date: new Date().toISOString(),
-      userTurns: hist.filter(t => t.speaker === 'You').length,
+      userTurns: spoken.length,
       report,
+      transcript: spoken,
     };
     historyService.add(record);
     setHistory(historyService.getAll());
@@ -321,6 +325,7 @@ const App: React.FC = () => {
           <Feedback
             report={lastReport}
             plan={lastPlan}
+            transcript={lastTranscript}
             modeLabel={activeMode.label}
             onPhrasesChanged={() => setPhrases(phrasesService.getAll())}
             onNewSession={() => setScreen('session')}
@@ -337,6 +342,7 @@ const App: React.FC = () => {
                 key={r.id}
                 onClick={() => {
                   setLastReport(r.report);
+                  setLastTranscript(r.transcript || []);
                   setLastPlan({ topic: r.topic, opener: { speaker: '', text: '' }, targetWords: r.report.targetWords.map(t => t.word) });
                   setActiveMode(MODES.find(m => m.id === r.mode) || MODES[0]);
                   setScreen('feedback');
