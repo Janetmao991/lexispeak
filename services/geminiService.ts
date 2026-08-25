@@ -208,7 +208,7 @@ export const transcribeAudio = async (base64Audio: string, mimeType: string): Pr
     contents: [{
       parts: [
         { inlineData: { data: base64Audio, mimeType } },
-        { text: 'Transcribe this English speech verbatim. Return ONLY the transcribed words. If there is no intelligible speech, return an empty string.' },
+        { text: 'Transcribe this English speech verbatim. Return ONLY the words actually spoken. If the audio is silent, unclear, or contains no speech, return an empty string. NEVER invent, guess, or complete content that is not clearly audible.' },
       ],
     }],
     config: { temperature: 0, thinkingConfig: { thinkingLevel: ThinkingLevel.MINIMAL } },

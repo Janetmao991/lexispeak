@@ -152,6 +152,12 @@ export const Session: React.FC<SessionProps> = ({ mode, role, candidateWords, on
         const rec = await recRef.current!.stop();
         const text = await transcribeAudio(rec.base64, rec.mimeType);
         if (!text) throw new Error("Didn't catch any speech — try again, a bit louder.");
+        // Hallucination guard: a transcript far longer than the clip's duration
+        // allows (nobody speaks 4+ words/second) means the model invented it.
+        const words = text.trim().split(/\s+/).length;
+        if (words > Math.max(8, Math.max(1, rec.seconds) * 4)) {
+          throw new Error("That transcription looked garbled — please try again.");
+        }
         pendingAudio.current = { base64: rec.base64, mime: rec.mimeType };
         setInput(prev => (prev ? prev + ' ' : '') + text);
       } catch (e: any) {
