@@ -15,7 +15,7 @@ const getAi = () => {
   return new GoogleGenAI({ apiKey: key, httpOptions: { timeout: 60000 } });
 };
 
-const TRANSIENT = /503|UNAVAILABLE|overloaded|high demand|fetch failed|network/i;
+const TRANSIENT = /503|504|UNAVAILABLE|DEADLINE_EXCEEDED|Deadline expired|overloaded|high demand|fetch failed|network/i;
 const generate = async (params: GenerateContentParameters, tries = 3): Promise<GenerateContentResponse> => {
   const ai = getAi();
   let lastError: unknown;
@@ -35,6 +35,7 @@ const generate = async (params: GenerateContentParameters, tries = 3): Promise<G
 };
 
 export const friendlyError = (raw: string): string => {
+  if (/504|DEADLINE_EXCEEDED|Deadline expired|timed? ?out/i.test(raw)) return 'That took too long and timed out — please try again.';
   if (/503|high demand|overloaded/i.test(raw)) return 'The AI service is briefly overloaded — wait a few seconds and try again.';
   if (/429|RESOURCE_EXHAUSTED|quota/i.test(raw)) return 'Rate limit reached — take a short break and try again in a minute.';
   if (/API key/i.test(raw)) return raw;
