@@ -27,6 +27,14 @@ export const MODES: ModeDef[] = [
     ],
   },
   {
+    id: 'free',
+    label: 'Free Talk',
+    tagline: 'No topic, no targets — just talk',
+    personas: [
+      { name: 'Alex', voice: 'Puck', style: 'easygoing native-speaker friend; reacts genuinely, follows wherever you take the conversation, corrects your slips live under each message' },
+    ],
+  },
+  {
     id: 'group',
     label: 'Group Discussion',
     tagline: 'Three-way roundtable — hold your ground',

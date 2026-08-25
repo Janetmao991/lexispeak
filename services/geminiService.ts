@@ -1,5 +1,5 @@
 import { GoogleGenAI, Type, Modality, ThinkingLevel, GenerateContentParameters, GenerateContentResponse } from '@google/genai';
-import { ModeDef, SessionPlan, Turn, FeedbackReport } from '../types';
+import { ModeDef, Persona, SessionPlan, Turn, FeedbackReport, GrammarNote } from '../types';
 
 // ---- BYOK: key lives in this browser only (same convention as LexiAI) ----
 export const getApiKey = (): string =>
@@ -64,6 +64,8 @@ const modeBrief = (mode: ModeDef, role?: string): string => {
       return 'A workplace discussion between colleagues about a concrete business decision with real trade-offs (pricing, hiring, strategy, a deal).';
     case 'group':
       return 'A three-person roundtable (two AI participants + the learner) debating one concrete question with genuinely different viewpoints.';
+    case 'free':
+      return 'A completely free-form chat — no topic, no agenda; follow wherever the learner wants to go.';
   }
 };
 
@@ -149,6 +151,54 @@ Continue the conversation. Rules:
     .slice(0, isGroup ? 2 : 1);
 };
 
+// ---------- Free Talk: reply + live fixes in one call ----------
+
+const freeReplySchema = {
+  type: Type.OBJECT,
+  properties: {
+    reply: { type: Type.STRING },
+    fixes: {
+      type: Type.ARRAY,
+      items: {
+        type: Type.OBJECT,
+        properties: {
+          quote: { type: Type.STRING },
+          fix: { type: Type.STRING },
+          why: { type: Type.STRING },
+        },
+        required: ['quote', 'fix', 'why'],
+      },
+    },
+  },
+  required: ['reply', 'fixes'],
+};
+
+export const freeTalkTurns = async (
+  persona: Persona,
+  history: Turn[],
+): Promise<{ turns: { speaker: string; text: string }[]; fixes: GrammarNote[] }> => {
+  const transcript = history.map(t => `${t.speaker}: ${t.text}`).join('\n');
+  const response = await generate({
+    model: MODEL,
+    contents: `A completely free-form voice chat between the learner ("You") and ${persona.name} (${persona.style}). No fixed topic — follow wherever the learner takes it.
+
+CONVERSATION SO FAR:
+${transcript}
+
+Return:
+1. reply — ${persona.name}'s next turn: SHORT spoken language, 1-3 sentences, contractions welcome. React genuinely to what the learner just said, then keep the chat alive (a follow-up question or an invitation to say more — vary it, not every single turn). Never discuss the learner's English mistakes inside the reply; the reply is pure conversation. No lists or markdown — it will be spoken aloud.
+2. fixes — corrections for the learner's LAST message only: real grammar errors, wrong word choices, or clearly unnatural phrasing. quote = their exact words, fix = the natural version, why = one short reason. Max 3, most important first. Empty array if the message was fine — never invent problems. Ignore transcription artifacts like punctuation or capitalization.`,
+    config: {
+      responseMimeType: 'application/json',
+      responseSchema: freeReplySchema,
+      thinkingConfig: { thinkingLevel: ThinkingLevel.MINIMAL },
+      temperature: 0.8,
+    },
+  });
+  const parsed = JSON.parse(response.text!);
+  return { turns: [{ speaker: persona.name, text: parsed.reply }], fixes: parsed.fixes || [] };
+};
+
 // ---------- Audio: transcription ----------
 
 export const transcribeAudio = async (base64Audio: string, mimeType: string): Promise<string> => {
@@ -199,7 +249,7 @@ export const gradeSession = async (
 
   const parts: any[] = [{ text: `You are an expert English speaking coach reviewing a practice session.
 
-TARGET WORDS the learner was practicing: ${targetWords.join(', ')}
+TARGET WORDS the learner was practicing: ${targetWords.join(', ') || '(none — this was a free conversation; return an empty targetWords array)'}
 
 TRANSCRIPT:
 ${transcript}

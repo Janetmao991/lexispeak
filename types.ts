@@ -1,4 +1,4 @@
-export type ModeId = 'casual' | 'interview' | 'business' | 'group';
+export type ModeId = 'casual' | 'interview' | 'business' | 'group' | 'free';
 
 export interface Persona {
   name: string;
@@ -32,6 +32,8 @@ export interface Turn {
   text: string;
   audioBase64?: string; // user turns only
   audioMime?: string;
+  /** Free Talk mode: live corrections for this user turn, shown under the bubble. */
+  fixes?: GrammarNote[];
 }
 
 export interface GrammarNote {

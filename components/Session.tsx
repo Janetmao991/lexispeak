@@ -1,9 +1,17 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { ModeDef, SessionPlan, Turn, FeedbackReport } from '../types';
-import { planSession, nextTurns, transcribeAudio, gradeSession, speakSafe, stopSpeech, friendlyError, fetchSpeech, playSpeech, speakFallback } from '../services/geminiService';
+import { planSession, nextTurns, freeTalkTurns, transcribeAudio, gradeSession, speakSafe, stopSpeech, friendlyError, fetchSpeech, playSpeech, speakFallback } from '../services/geminiService';
 import { startRecording, RecorderHandle } from '../services/recorderService';
-import { Mic, Square, Send, Loader2, Volume2, VolumeX, Flag, Shuffle, ArrowLeft } from 'lucide-react';
+import { Mic, Square, Send, Loader2, Volume2, VolumeX, Flag, Shuffle, ArrowLeft, Pencil } from 'lucide-react';
+
+const FREE_OPENERS = [
+  "Hey! Good to see you. What's on your mind today?",
+  "Hey, how's your day going so far?",
+  "Hi! Anything interesting happen today?",
+  "Hey! What have you been up to lately?",
+  "Hey there. So — what do you feel like talking about?",
+];
 
 interface SessionProps {
   mode: ModeDef;
@@ -60,10 +68,24 @@ export const Session: React.FC<SessionProps> = ({ mode, role, candidateWords, on
     }
   };
 
+  const isFree = mode.id === 'free';
+
   const start = async () => {
     setPhase('planning');
     setHistory([]);
     setError(null);
+    if (isFree) {
+      // No planning round-trip: canned opener, no topic, no target words.
+      const opener: Turn = {
+        speaker: mode.personas[0].name,
+        text: FREE_OPENERS[Math.floor(Math.random() * FREE_OPENERS.length)],
+      };
+      setPlan({ topic: 'Free talk', opener, targetWords: [] });
+      setHistory([opener]);
+      setPhase('chatting');
+      speakTurns([opener]);
+      return;
+    }
     try {
       const newPlan = await planSession(mode, candidateWords, role);
       setPlan(newPlan);
@@ -102,7 +124,17 @@ export const Session: React.FC<SessionProps> = ({ mode, role, candidateWords, on
     setSending(true);
     setError(null);
     try {
-      const replies = await nextTurns(mode, plan, newHistory, role);
+      let replies: { speaker: string; text: string }[];
+      if (isFree) {
+        const result = await freeTalkTurns(mode.personas[0], newHistory);
+        replies = result.turns;
+        if (result.fixes.length) {
+          setHistory(prev => prev.map((t, i) =>
+            i === prev.length - 1 && t.speaker === 'You' ? { ...t, fixes: result.fixes } : t));
+        }
+      } else {
+        replies = await nextTurns(mode, plan, newHistory, role);
+      }
       setSending(false);
       await revealAndSpeak(replies);
     } catch (e: any) {
@@ -193,21 +225,21 @@ export const Session: React.FC<SessionProps> = ({ mode, role, candidateWords, on
             </button>
             <div>
               <p className="text-[10px] font-bold uppercase tracking-widest text-stone-400">{mode.label}{role ? ` · ${role}` : ''}</p>
-              <p className="font-serif font-bold text-stone-900">{plan?.topic}</p>
+              <p className="font-serif font-bold text-stone-900">{isFree ? 'Just talk — anything goes' : plan?.topic}</p>
             </div>
           </div>
           <button
             onClick={() => {
-              if (userTurns > 0 && !window.confirm('Start over with a new topic?')) return;
+              if (userTurns > 0 && !window.confirm(isFree ? 'Start a fresh chat?' : 'Start over with a new topic?')) return;
               stopSpeech();
               start();
             }}
             className="flex items-center gap-1.5 px-3 py-1.5 rounded-full border border-stone-200 bg-stone-50 text-xs font-bold text-stone-500 hover:text-stone-900 hover:border-stone-400 transition-all"
           >
-            <Shuffle className="w-3 h-3" /> New Topic
+            <Shuffle className="w-3 h-3" /> {isFree ? 'Restart' : 'New Topic'}
           </button>
         </div>
-        <div className="flex flex-wrap gap-2">
+        {(plan?.targetWords.length ?? 0) > 0 && <div className="flex flex-wrap gap-2">
           {plan?.targetWords.map(w => (
             <span key={w} className={`text-xs font-bold px-3 py-1 rounded-full border capitalize transition-all ${
               wordUsed(w) ? 'bg-emerald-50 text-emerald-700 border-emerald-200 line-through decoration-2' : 'bg-stone-50 text-stone-600 border-stone-200'
@@ -215,7 +247,7 @@ export const Session: React.FC<SessionProps> = ({ mode, role, candidateWords, on
               {wordUsed(w) ? '✓ ' : ''}{w}
             </span>
           ))}
-        </div>
+        </div>}
       </div>
 
       {/* Chat */}
@@ -232,6 +264,19 @@ export const Session: React.FC<SessionProps> = ({ mode, role, candidateWords, on
                 }`}>
                   {t.text}
                 </div>
+                {t.fixes && t.fixes.length > 0 && (
+                  <div className="mt-2 bg-amber-50/70 border border-amber-100 rounded-xl px-4 py-3 space-y-1.5">
+                    {t.fixes.map((f, j) => (
+                      <p key={j} className="text-xs leading-relaxed text-stone-600">
+                        <Pencil className="w-3 h-3 inline mr-1 text-amber-600" />
+                        <span className="line-through decoration-red-300 text-red-600">{f.quote}</span>
+                        <span className="mx-1 text-stone-400">→</span>
+                        <span className="font-semibold text-emerald-700">{f.fix}</span>
+                        <span className="text-stone-400"> · {f.why}</span>
+                      </p>
+                    ))}
+                  </div>
+                )}
               </div>
             </div>
           ))}

@@ -9,7 +9,7 @@ import { wordsService } from './services/wordsService';
 import { historyService } from './services/historyService';
 import { phrasesService } from './services/phrasesService';
 import { hasApiKey } from './services/geminiService';
-import { Mic2, X, Loader2, LogOut, Settings as SettingsIcon, KeyRound, Eye, EyeOff, Check, ExternalLink, History as HistoryIcon, BookMarked, Trash2, MessagesSquare, Briefcase, Users, Coffee, Cloud, CloudOff } from 'lucide-react';
+import { Mic2, X, Loader2, LogOut, Settings as SettingsIcon, KeyRound, Eye, EyeOff, Check, ExternalLink, History as HistoryIcon, BookMarked, Trash2, MessagesSquare, Briefcase, Users, Coffee, Cloud, CloudOff, Feather } from 'lucide-react';
 import type { Session as SupaSession } from '@supabase/supabase-js';
 
 type Screen = 'home' | 'session' | 'feedback' | 'history' | 'phrases';
@@ -19,6 +19,7 @@ const MODE_ICONS: Record<string, React.ReactNode> = {
   interview: <Briefcase className="w-6 h-6" />,
   business: <MessagesSquare className="w-6 h-6" />,
   group: <Users className="w-6 h-6" />,
+  free: <Feather className="w-6 h-6" />,
 };
 
 const App: React.FC = () => {
