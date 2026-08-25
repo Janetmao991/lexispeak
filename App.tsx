@@ -236,8 +236,33 @@ const App: React.FC = () => {
               )}
             </div>
 
+            {/* Free Talk hero — the zero-setup daily default (layout Option A) */}
+            {(() => {
+              const free = MODES.find(m => m.id === 'free')!;
+              return (
+                <div className="bg-stone-900 text-[#FDFBF7] rounded-2xl shadow-sm p-8 sm:p-9 flex flex-col sm:flex-row sm:items-center gap-6 sm:gap-7">
+                  <div className="p-4 rounded-[14px] bg-white/10 self-start sm:self-auto shrink-0">
+                    <Feather className="w-7 h-7" />
+                  </div>
+                  <div className="flex-1 space-y-2">
+                    <p className="text-[11px] font-bold uppercase tracking-widest text-stone-400">No setup &middot; live grammar fixes</p>
+                    <h3 className="font-serif font-bold text-3xl">Free Talk</h3>
+                    <p className="text-sm text-stone-300 leading-relaxed">No topic, no targets &mdash; just talk. Alex follows wherever you go and flags your slips as you chat.</p>
+                  </div>
+                  <button
+                    onClick={() => startMode(free)}
+                    className="shrink-0 px-8 py-3.5 bg-[#FDFBF7] text-stone-900 rounded-full text-sm font-bold hover:bg-white transition-colors"
+                  >
+                    Start Talking
+                  </button>
+                </div>
+              );
+            })()}
+
+            <div className="space-y-3.5">
+            <p className="text-[11px] font-bold uppercase tracking-widest text-stone-400 px-1">Structured practice</p>
             <div className="grid md:grid-cols-2 gap-4">
-              {MODES.map(mode => (
+              {MODES.filter(m => m.id !== 'free').map(mode => (
                 <div key={mode.id} className="bg-white rounded-2xl border-2 border-transparent hover:border-stone-800 shadow-sm hover:shadow-xl hover:-translate-y-0.5 transition-all p-7 space-y-4 group">
                   <div className="flex items-center gap-4">
                     <div className="p-3 rounded-xl bg-stone-50 text-stone-500 group-hover:bg-stone-900 group-hover:text-white transition-colors">
@@ -270,6 +295,7 @@ const App: React.FC = () => {
                   </button>
                 </div>
               ))}
+            </div>
             </div>
 
             {!keyConfigured && (
