@@ -1,5 +1,7 @@
+// Gemini — audio only: transcribing your speech, persona voices, and listening for
+// pronunciation. Claude can't hear or speak; the conversation itself is in claudeService.ts.
 import { GoogleGenAI, Type, Modality, ThinkingLevel, GenerateContentParameters, GenerateContentResponse } from '@google/genai';
-import { ModeDef, Persona, SessionPlan, Turn, FeedbackReport, GrammarNote } from '../types';
+import { Turn, FeedbackReport } from '../types';
 
 // ---- BYOK: key lives in this browser only (same convention as LexiAI) ----
 export const getApiKey = (): string =>
@@ -11,7 +13,7 @@ const TTS_MODEL = 'gemini-2.5-flash-preview-tts';
 
 const getAi = () => {
   const key = getApiKey();
-  if (!key) throw new Error('No Gemini API key configured. Open Settings and paste your free key from aistudio.google.com/apikey.');
+  if (!key) throw new Error('No Gemini API key configured. It powers voice (transcription and persona voices) — open Settings and paste your free key from aistudio.google.com/apikey.');
   return new GoogleGenAI({ apiKey: key, httpOptions: { timeout: 60000 } });
 };
 
@@ -34,172 +36,6 @@ const generate = async (params: GenerateContentParameters, tries = 3): Promise<G
   throw lastError;
 };
 
-export const friendlyError = (raw: string): string => {
-  if (/504|DEADLINE_EXCEEDED|Deadline expired|timed? ?out/i.test(raw)) return 'That took too long and timed out — please try again.';
-  if (/503|high demand|overloaded/i.test(raw)) return 'The AI service is briefly overloaded — wait a few seconds and try again.';
-  if (/429|RESOURCE_EXHAUSTED|quota/i.test(raw)) return 'Rate limit reached — take a short break and try again in a minute.';
-  if (/API key/i.test(raw)) return raw;
-  return 'Something went wrong talking to the AI. Please try again.';
-};
-
-// ---------- Session planning ----------
-
-const planSchema = {
-  type: Type.OBJECT,
-  properties: {
-    topic: { type: Type.STRING },
-    openerSpeaker: { type: Type.STRING },
-    openerText: { type: Type.STRING },
-    targetWords: { type: Type.ARRAY, items: { type: Type.STRING } },
-  },
-  required: ['topic', 'openerSpeaker', 'openerText', 'targetWords'],
-};
-
-const modeBrief = (mode: ModeDef, role?: string): string => {
-  switch (mode.id) {
-    case 'casual':
-      return 'A relaxed everyday conversation between friends — life, work, culture, plans.';
-    case 'interview':
-      return `A realistic job interview for the role of: ${role || 'Investment Banking Analyst'}. Mix behavioral and role-specific questions.`;
-    case 'business':
-      return 'A workplace discussion between colleagues about a concrete business decision with real trade-offs (pricing, hiring, strategy, a deal).';
-    case 'group':
-      return 'A three-person roundtable (two AI participants + the learner) debating one concrete question with genuinely different viewpoints.';
-    case 'free':
-      return 'A completely free-form chat — no topic, no agenda; follow wherever the learner wants to go.';
-  }
-};
-
-export const planSession = async (mode: ModeDef, candidateWords: string[], role?: string): Promise<SessionPlan> => {
-  const response = await generate({
-    model: MODEL,
-    contents: `You are setting up an English speaking-practice session.
-
-FORMAT: ${modeBrief(mode, role)}
-PARTICIPANT PERSONAS: ${mode.personas.map(p => `${p.name} (${p.style})`).join('; ')}
-
-From this learner's vocabulary list, pick 4-6 items that could come up naturally in this session (prefer phrasal verbs, idioms and expressive words; skip stiff written-only terms):
-${candidateWords.join(', ')}
-
-Then set a concrete topic that fits the format, and write the opening line spoken by ${mode.personas[0].name} — warm, 1-3 sentences, ending with a question to the learner. Don't use the target words in the opener.`,
-    config: {
-      responseMimeType: 'application/json',
-      responseSchema: planSchema,
-      thinkingConfig: { thinkingLevel: ThinkingLevel.MINIMAL },
-      temperature: 0.9,
-    },
-  });
-  const parsed = JSON.parse(response.text!);
-  return {
-    topic: parsed.topic,
-    opener: { speaker: parsed.openerSpeaker || mode.personas[0].name, text: parsed.openerText },
-    targetWords: parsed.targetWords,
-  };
-};
-
-// ---------- Conversation turns (manual history, JSON replies) ----------
-
-const replySchema = {
-  type: Type.OBJECT,
-  properties: {
-    turns: {
-      type: Type.ARRAY,
-      items: {
-        type: Type.OBJECT,
-        properties: { speaker: { type: Type.STRING }, text: { type: Type.STRING } },
-        required: ['speaker', 'text'],
-      },
-    },
-  },
-  required: ['turns'],
-};
-
-export const nextTurns = async (
-  mode: ModeDef,
-  plan: SessionPlan,
-  history: Turn[],
-  role?: string,
-): Promise<{ speaker: string; text: string }[]> => {
-  const transcript = history.map(t => `${t.speaker}: ${t.text}`).join('\n');
-  const isGroup = mode.id === 'group';
-  const response = await generate({
-    model: MODEL,
-    contents: `${modeBrief(mode, role)}
-TOPIC: ${plan.topic}
-PERSONAS you control: ${mode.personas.map(p => `${p.name} — ${p.style}; distinct voice and opinions`).join('; ')}
-The learner is "You". Target words the learner should get natural openings to use (never mention this list): ${plan.targetWords.join(', ')}
-
-CONVERSATION SO FAR:
-${transcript}
-
-Continue the conversation. Rules:
-1. Reply with ${isGroup ? '1-2 turns (one per persona; they may build on or push back at each other, but at most one turn each)' : `exactly 1 turn as ${mode.personas[0].name}`}.
-2. Each turn: SHORT spoken language, 1-3 sentences, contractions welcome, no lists or markdown.
-3. End the last turn with a question or hook inviting the learner to speak.
-4. If the learner misused a word, naturally recast it correctly in passing — never lecture.
-5. Steer so target words become natural for the learner to use.${mode.id === 'interview' ? '\n6. Stay in interviewer mode: one question at a time, occasionally probe deeper on the previous answer.' : ''}`,
-    config: {
-      responseMimeType: 'application/json',
-      responseSchema: replySchema,
-      thinkingConfig: { thinkingLevel: ThinkingLevel.MINIMAL },
-      temperature: 0.9,
-    },
-  });
-  const parsed = JSON.parse(response.text!);
-  const valid = new Set(mode.personas.map(p => p.name));
-  return (parsed.turns as { speaker: string; text: string }[])
-    .filter(t => valid.has(t.speaker))
-    .slice(0, isGroup ? 2 : 1);
-};
-
-// ---------- Free Talk: reply + live fixes in one call ----------
-
-const freeReplySchema = {
-  type: Type.OBJECT,
-  properties: {
-    reply: { type: Type.STRING },
-    fixes: {
-      type: Type.ARRAY,
-      items: {
-        type: Type.OBJECT,
-        properties: {
-          quote: { type: Type.STRING },
-          fix: { type: Type.STRING },
-          why: { type: Type.STRING },
-        },
-        required: ['quote', 'fix', 'why'],
-      },
-    },
-  },
-  required: ['reply', 'fixes'],
-};
-
-export const freeTalkTurns = async (
-  persona: Persona,
-  history: Turn[],
-): Promise<{ turns: { speaker: string; text: string }[]; fixes: GrammarNote[] }> => {
-  const transcript = history.map(t => `${t.speaker}: ${t.text}`).join('\n');
-  const response = await generate({
-    model: MODEL,
-    contents: `A completely free-form voice chat between the learner ("You") and ${persona.name} (${persona.style}). No fixed topic — follow wherever the learner takes it.
-
-CONVERSATION SO FAR:
-${transcript}
-
-Return:
-1. reply — ${persona.name}'s next turn: SHORT spoken language, 1-3 sentences, contractions welcome. React genuinely to what the learner just said, then keep the chat alive (a follow-up question or an invitation to say more — vary it, not every single turn). Never discuss the learner's English mistakes inside the reply; the reply is pure conversation. No lists or markdown — it will be spoken aloud.
-2. fixes — corrections for the learner's LAST message only: real grammar errors, wrong word choices, or clearly unnatural phrasing. quote = their exact words, fix = the natural version, why = one short reason. Max 3, most important first. Empty array if the message was fine — never invent problems. Ignore transcription artifacts like punctuation or capitalization.`,
-    config: {
-      responseMimeType: 'application/json',
-      responseSchema: freeReplySchema,
-      thinkingConfig: { thinkingLevel: ThinkingLevel.MINIMAL },
-      temperature: 0.8,
-    },
-  });
-  const parsed = JSON.parse(response.text!);
-  return { turns: [{ speaker: persona.name, text: parsed.reply }], fixes: parsed.fixes || [] };
-};
-
 // ---------- Audio: transcription ----------
 
 export const transcribeAudio = async (base64Audio: string, mimeType: string): Promise<string> => {
@@ -216,69 +52,39 @@ export const transcribeAudio = async (base64Audio: string, mimeType: string): Pr
   return (response.text || '').trim();
 };
 
-// ---------- Feedback (transcript + real audio clips) ----------
 
-const feedbackSchema = {
+// ---------- Pronunciation (listens to the learner's real audio clips) ----------
+
+const pronunciationSchema = {
   type: Type.OBJECT,
   properties: {
-    score: { type: Type.NUMBER },
-    overall: { type: Type.STRING },
-    focusTip: { type: Type.STRING },
-    grammar: { type: Type.ARRAY, items: { type: Type.OBJECT, properties: {
-      quote: { type: Type.STRING }, fix: { type: Type.STRING }, why: { type: Type.STRING },
-    }, required: ['quote', 'fix', 'why'] } },
     pronunciation: { type: Type.ARRAY, items: { type: Type.OBJECT, properties: {
       clipIndex: { type: Type.NUMBER }, word: { type: Type.STRING }, note: { type: Type.STRING },
       ipa: { type: Type.STRING }, heardAs: { type: Type.STRING },
     }, required: ['clipIndex', 'word', 'note', 'ipa'] } },
-    idioms: { type: Type.ARRAY, items: { type: Type.OBJECT, properties: {
-      original: { type: Type.STRING }, upgraded: { type: Type.STRING }, why: { type: Type.STRING },
-    }, required: ['original', 'upgraded', 'why'] } },
-    targetWords: { type: Type.ARRAY, items: { type: Type.OBJECT, properties: {
-      word: { type: Type.STRING }, used: { type: Type.BOOLEAN }, usedWell: { type: Type.BOOLEAN }, comment: { type: Type.STRING },
-    }, required: ['word', 'used', 'usedWell', 'comment'] } },
   },
-  required: ['score', 'overall', 'focusTip', 'grammar', 'pronunciation', 'idioms', 'targetWords'],
+  required: ['pronunciation'],
 };
 
-export const gradeSession = async (
-  history: Turn[],
-  targetWords: string[],
-): Promise<FeedbackReport> => {
-  const transcript = history.map(t => `${t.speaker === 'You' ? 'LEARNER' : t.speaker.toUpperCase()}: ${t.text}`).join('\n');
-  const clips = history.filter(t => t.speaker === 'You' && t.audioBase64).slice(-6);
+export const gradePronunciation = async (clips: Turn[]): Promise<FeedbackReport['pronunciation']> => {
+  const parts: any[] = [{ text: `You are an expert English pronunciation coach. Attached are ${clips.length} audio clips of a learner's speech (chronological, clipIndex 0-based). What they meant to say, per clip:
+${clips.map((c, i) => `[${i}] ${c.text}`).join('\n')}
 
-  const parts: any[] = [{ text: `You are an expert English speaking coach reviewing a practice session.
-
-TARGET WORDS the learner was practicing: ${targetWords.join(', ') || '(none — this was a free conversation; return an empty targetWords array)'}
-
-TRANSCRIPT:
-${transcript}
-
-Attached are up to ${clips.length} audio clips of the LEARNER's actual speech (in chronological order, clipIndex 0-based).
-
-Produce a coaching report:
-1. grammar: up to 5 issues — exact quote from the learner, the fix, and a one-line why. Only real errors or clearly unnatural phrasing; skip nitpicks.
-2. pronunciation: listen to the audio clips. Note specific words that were mispronounced, oddly stressed, or unclear: clipIndex + word + "ipa" = the CORRECT American-English pronunciation in IPA with stress marks (e.g. "/kəˈlæt.ər.əl/") + "heardAs" = how the learner actually said it (IPA or a plain respelling like "col-LAT-er-al", stress in caps) + a short note on the fix. If pronunciation is genuinely clean, return fewer or no notes — don't invent problems.
-3. idioms: up to 4 places where a native speaker would phrase it differently — original vs upgraded, keep the learner's meaning; "why" = one line on the nuance (register, collocation, why natives prefer it).
-4. targetWords: for each target word — did the LEARNER use it (any inflection), was it used well, one comment.
-5. overall: 2-3 sentences on fluency and communication, encouraging but honest. focusTip: the single highest-leverage thing to work on next. score: /100 for overall spoken performance.` }];
-
+Listen to the clips. Note specific words that were mispronounced, oddly stressed, or unclear: clipIndex + word + "ipa" = the CORRECT American-English pronunciation in IPA with stress marks (e.g. "/kəˈlæt.ər.əl/") + "heardAs" = how the learner actually said it (IPA or a plain respelling like "col-LAT-er-al", stress in caps) + a short note on the fix. If pronunciation is genuinely clean, return fewer or no notes — don't invent problems.` }];
   for (const clip of clips) {
     parts.push({ inlineData: { data: clip.audioBase64!, mimeType: clip.audioMime || 'audio/webm' } });
   }
-
   const response = await generate({
     model: MODEL,
     contents: [{ parts }],
     config: {
       responseMimeType: 'application/json',
-      responseSchema: feedbackSchema,
+      responseSchema: pronunciationSchema,
       thinkingConfig: { thinkingLevel: ThinkingLevel.LOW },
       temperature: 0.3,
     },
   });
-  return JSON.parse(response.text!);
+  return JSON.parse(response.text!).pronunciation || [];
 };
 
 // ---------- Natural TTS with per-persona voices ----------

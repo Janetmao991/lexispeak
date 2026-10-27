@@ -1,7 +1,8 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { ModeDef, SessionPlan, Turn, FeedbackReport } from '../types';
-import { planSession, nextTurns, freeTalkTurns, transcribeAudio, gradeSession, speakSafe, stopSpeech, friendlyError, fetchSpeech, playSpeech, speakFallback } from '../services/geminiService';
+import { planSession, nextTurns, freeTalkTurns, gradeSession, friendlyError } from '../services/claudeService';
+import { transcribeAudio, speakSafe, stopSpeech, fetchSpeech, playSpeech, speakFallback } from '../services/geminiService';
 import { startRecording, RecorderHandle } from '../services/recorderService';
 import { Mic, Square, Send, Loader2, Volume2, VolumeX, Flag, Shuffle, ArrowLeft, Pencil } from 'lucide-react';
 

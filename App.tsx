@@ -9,6 +9,7 @@ import { wordsService } from './services/wordsService';
 import { historyService } from './services/historyService';
 import { phrasesService } from './services/phrasesService';
 import { hasApiKey } from './services/geminiService';
+import { hasClaudeKey } from './services/claudeService';
 import { Mic2, X, Loader2, LogOut, Settings as SettingsIcon, KeyRound, Eye, EyeOff, Check, ExternalLink, History as HistoryIcon, BookMarked, Trash2, MessagesSquare, Briefcase, Users, Coffee, Cloud, CloudOff, Feather } from 'lucide-react';
 import type { Session as SupaSession } from '@supabase/supabase-js';
 
@@ -53,9 +54,10 @@ const App: React.FC = () => {
   // Settings modal
   const [showSettings, setShowSettings] = useState(false);
   const [apiKeyInput, setApiKeyInput] = useState(() => localStorage.getItem('lexiai_api_key') || '');
+  const [claudeKeyInput, setClaudeKeyInput] = useState(() => localStorage.getItem('lexiai_claude_key') || '');
   const [showKey, setShowKey] = useState(false);
   const [keySaved, setKeySaved] = useState(false);
-  const [keyConfigured, setKeyConfigured] = useState(() => hasApiKey());
+  const [keyConfigured, setKeyConfigured] = useState(() => hasApiKey() && hasClaudeKey());
 
   const [history, setHistory] = useState<SessionRecord[]>(() => historyService.getAll());
   const [phrases, setPhrases] = useState(() => phrasesService.getAll());
@@ -304,7 +306,7 @@ const App: React.FC = () => {
 
             {!keyConfigured && (
               <div className="bg-amber-50 border border-amber-100 rounded-2xl p-4 flex items-center justify-between gap-4">
-                <p className="text-sm text-amber-800">Sessions need a Gemini API key (free) — it stays in this browser only.</p>
+                <p className="text-sm text-amber-800">Sessions need a Claude API key (conversation + feedback) and a Gemini key (voice). Both stay in this browser only.</p>
                 <button onClick={() => setShowSettings(true)} className="shrink-0 px-4 py-1.5 bg-stone-900 text-white rounded-full text-xs font-bold hover:bg-black">Open Settings</button>
               </div>
             )}
@@ -480,32 +482,41 @@ const App: React.FC = () => {
               <h3 className="text-2xl font-serif font-bold">Settings</h3>
               <button onClick={() => setShowSettings(false)} className="text-stone-400 hover:text-stone-900"><X /></button>
             </div>
-            <label className="block text-xs font-bold uppercase tracking-wider text-stone-400">
-              <KeyRound className="w-3.5 h-3.5 inline mr-1" /> Gemini API Key
-            </label>
-            <div className="relative">
-              <input
-                type={showKey ? 'text' : 'password'}
-                value={apiKeyInput}
-                onChange={e => setApiKeyInput(e.target.value)}
-                placeholder="Paste your API key"
-                className="w-full p-4 pr-12 bg-stone-50 border border-stone-200 rounded-xl outline-none focus:ring-2 focus:ring-stone-900 font-mono text-sm"
-              />
-              <button onClick={() => setShowKey(!showKey)} className="absolute right-4 top-1/2 -translate-y-1/2 text-stone-400 hover:text-stone-900">
-                {showKey ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-              </button>
-            </div>
-            <p className="text-xs text-stone-400">
-              Stored only in this browser.{' '}
-              <a href="https://aistudio.google.com/apikey" target="_blank" rel="noreferrer" className="text-stone-700 underline inline-flex items-center gap-0.5">
-                Get a free key <ExternalLink className="w-3 h-3" />
-              </a>
-            </p>
+            {([
+              ['Claude API Key', claudeKeyInput, setClaudeKeyInput, 'Runs the conversation and your feedback report.', 'https://console.anthropic.com/settings/keys', 'Get a key'],
+              ['Gemini API Key (voice)', apiKeyInput, setApiKeyInput, 'Transcribes your speech, gives each persona a voice, and checks pronunciation.', 'https://aistudio.google.com/apikey', 'Get a free key'],
+            ] as const).map(([label, value, setValue, hint, href, linkText]) => (
+              <div key={label} className="space-y-2">
+                <label className="block text-xs font-bold uppercase tracking-wider text-stone-400">
+                  <KeyRound className="w-3.5 h-3.5 inline mr-1" /> {label}
+                </label>
+                <div className="relative">
+                  <input
+                    type={showKey ? 'text' : 'password'}
+                    value={value}
+                    onChange={e => setValue(e.target.value)}
+                    placeholder="Paste your API key"
+                    className="w-full p-4 pr-12 bg-stone-50 border border-stone-200 rounded-xl outline-none focus:ring-2 focus:ring-stone-900 font-mono text-sm"
+                  />
+                  <button onClick={() => setShowKey(!showKey)} className="absolute right-4 top-1/2 -translate-y-1/2 text-stone-400 hover:text-stone-900">
+                    {showKey ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  </button>
+                </div>
+                <p className="text-xs text-stone-400">
+                  {hint} Stored only in this browser.{' '}
+                  <a href={href} target="_blank" rel="noreferrer" className="text-stone-700 underline inline-flex items-center gap-0.5">
+                    {linkText} <ExternalLink className="w-3 h-3" />
+                  </a>
+                </p>
+              </div>
+            ))}
             <button
               onClick={() => {
-                if (apiKeyInput.trim()) localStorage.setItem('lexiai_api_key', apiKeyInput.trim());
-                else localStorage.removeItem('lexiai_api_key');
-                setKeyConfigured(hasApiKey());
+                for (const [storage, value] of [['lexiai_api_key', apiKeyInput], ['lexiai_claude_key', claudeKeyInput]]) {
+                  if (value.trim()) localStorage.setItem(storage, value.trim());
+                  else localStorage.removeItem(storage);
+                }
+                setKeyConfigured(hasApiKey() && hasClaudeKey());
                 setKeySaved(true);
                 setTimeout(() => setShowSettings(false), 600);
               }}
