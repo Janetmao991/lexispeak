@@ -386,6 +386,7 @@ const App: React.FC = () => {
             report={lastReport}
             plan={lastPlan}
             transcript={lastTranscript}
+            wordSenses={Object.fromEntries(words.map(w => [w.word.toLowerCase(), w.definition]))}
             modeLabel={activeMode.label}
             onPhrasesChanged={() => setPhrases(phrasesService.getAll())}
             onNewSession={() => setScreen('session')}

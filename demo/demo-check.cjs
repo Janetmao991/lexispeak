@@ -62,7 +62,7 @@ const NOTE = 'This is a demo — sign up to practice with your own voice.';
   await page.getByRole('button', { name: /End & Get Coaching Report/ }).click();
   check('report: Everything You Said', await visible(page.getByText('Everything You Said'), 8000));
   check('report: score 78', await visible(page.getByText('78', { exact: true })));
-  check('report: annotated highlight', (await page.locator('span[title^="→"]').count()) >= 5);
+  check('report: annotated highlight', (await page.locator('span[role="tooltip"]').count()) >= 5);
   check('report: IPA shown', await visible(page.getByText('/ˈkʌmf.tə.bəl/')));
   await page.getByRole('button', { name: 'Hear it' }).first().click(); // browser speechSynthesis only
   await page.locator('div.border-b', { hasText: 'absolutely packed' }).getByRole('button', { name: 'Save', exact: true }).click();

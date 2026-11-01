@@ -1,6 +1,6 @@
 
 import React, { useState } from 'react';
-import { FeedbackReport, SessionPlan, GrammarNote, IdiomUpgrade } from '../types';
+import { FeedbackReport, SessionPlan, GrammarNote, IdiomUpgrade, TargetWordVerdict } from '../types';
 import { Award, Mic, Sparkles, Target, Lightbulb, ArrowLeft, RotateCcw, CheckCircle2, XCircle, Volume2, Loader2, BookmarkPlus, BookmarkCheck, Quote } from 'lucide-react';
 import { speakSafe } from '../services/geminiService';
 import { phrasesService } from '../services/phrasesService';
@@ -11,45 +11,120 @@ interface FeedbackProps {
   plan: SessionPlan;
   /** Everything the learner said, in order (may be empty for pre-transcript history records). */
   transcript?: string[];
+  /** Lower-cased target word → its sense from the LexiAI notebook, shown in the green tooltip. */
+  wordSenses?: Record<string, string>;
   modeLabel: string;
   onPhrasesChanged?: () => void;
   onNewSession: () => void;
   onHome: () => void;
 }
 
-// Mark up one spoken turn: grammar quotes in red, idiom originals in amber.
-// The tooltip carries the fix so the transcript reads as a conclusive review.
-const annotateTurn = (text: string, grammar: GrammarNote[], idioms: IdiomUpgrade[]): React.ReactNode => {
-  type Mark = { start: number; end: number; kind: 'grammar' | 'idiom'; tip: string };
+// LexiAI / Writing Station green — "target word used well".
+const GREEN = '#3d7a52';
+
+const escapeRe = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+const IRREGULAR: Record<string, string[]> = {
+  go: ['go', 'goes', 'going', 'went', 'gone'], be: ['be', 'is', 'am', 'are', 'was', 'were', 'been', 'being'],
+  take: ['take', 'takes', 'taking', 'took', 'taken'], make: ['make', 'makes', 'making', 'made'],
+  get: ['get', 'gets', 'getting', 'got', 'gotten'], run: ['run', 'runs', 'running', 'ran'],
+  come: ['come', 'comes', 'coming', 'came'], give: ['give', 'gives', 'giving', 'gave', 'given'],
+  keep: ['keep', 'keeps', 'keeping', 'kept'], put: ['put', 'puts', 'putting'], set: ['set', 'sets', 'setting'],
+};
+// One word of a target phrase, allowing everyday inflections: mull → mulled, gauge → gauging.
+const tokenPattern = (tok: string): string => {
+  if (IRREGULAR[tok]) return `(?:${IRREGULAR[tok].join('|')})`;
+  if (tok.length <= 3) return `${escapeRe(tok)}(?:s|es)?`;
+  const stem = tok.endsWith('e') ? tok.slice(0, -1) : tok.endsWith('y') ? tok.slice(0, -1) : tok;
+  const tail = tok.endsWith('e') ? '(?:e|es|ed|ing)' : tok.endsWith('y') ? '(?:y|ies|ied|ying)' : `(?:${escapeRe(tok.slice(-1))}?(?:s|es|ed|ing))?`;
+  return escapeRe(stem) + tail;
+};
+// Find a target word/phrase in a turn. Phrasal verbs may be split by one short word ("mulled it over").
+const findTarget = (text: string, word: string): { start: number; end: number } | null => {
+  const toks = word.trim().toLowerCase().split(/\s+/).filter(Boolean);
+  if (!toks.length || word.trim().length < 3) return null;
+  const re = new RegExp(`\\b${toks.map(tokenPattern).join(String.raw`(?:\s+[a-z']{1,6})?\s+`)}\\b`, 'i');
+  const m = re.exec(text);
+  return m ? { start: m.index, end: m.index + m[0].length } : null;
+};
+
+type MarkKind = 'grammar' | 'idiom' | 'target';
+type Mark = { start: number; end: number; kind: MarkKind; label: string; tip: string; target?: { label: string; tip: string } };
+
+const MARK_STYLE: Record<MarkKind, string> = {
+  grammar: 'bg-red-50 text-red-700 decoration-red-300',
+  idiom: 'bg-amber-50 text-amber-800 decoration-amber-300',
+  target: 'bg-[#3d7a52]/10 text-[#2f6040] decoration-[#3d7a52]/50',
+};
+const TIP_LABEL_STYLE: Record<MarkKind, string> = { grammar: 'text-red-300', idiom: 'text-amber-300', target: 'text-[#8fc9a2]' };
+
+// A highlighted span with a tooltip that opens on hover, keyboard focus, or tap.
+const Highlight: React.FC<{ mark: Mark; children: React.ReactNode }> = ({ mark, children }) => (
+  <span
+    tabIndex={0}
+    aria-label={`${mark.label}: ${mark.tip}${mark.target ? ` · ${mark.target.label}` : ''}`}
+    className={`group relative underline decoration-2 underline-offset-2 rounded-sm px-0.5 cursor-help outline-none focus-visible:ring-2 focus-visible:ring-stone-300 ${MARK_STYLE[mark.kind]}`}
+  >
+    {children}
+    {mark.target && (
+      <span aria-hidden className="inline-block w-1.5 h-1.5 rounded-full align-super ml-0.5" style={{ backgroundColor: GREEN }} />
+    )}
+    <span
+      role="tooltip"
+      className="pointer-events-none invisible opacity-0 group-hover:visible group-hover:opacity-100 group-focus:visible group-focus:opacity-100 transition-opacity absolute left-0 bottom-full mb-2 z-20 w-64 max-w-[80vw] bg-stone-900 text-stone-100 rounded-xl px-3 py-2 shadow-lg font-sans text-xs leading-snug not-italic no-underline whitespace-normal text-left"
+    >
+      <span className={`block text-[10px] font-bold uppercase tracking-wider mb-0.5 ${TIP_LABEL_STYLE[mark.kind]}`}>{mark.label}</span>
+      <span className="block">{mark.tip}</span>
+      {mark.target && (
+        <span className="block mt-1.5 pt-1.5 border-t border-stone-700">
+          <span className={`block text-[10px] font-bold uppercase tracking-wider mb-0.5 ${TIP_LABEL_STYLE.target}`}>{mark.target.label}</span>
+          {mark.target.tip && <span className="block">{mark.target.tip}</span>}
+        </span>
+      )}
+    </span>
+  </span>
+);
+
+// Mark up one spoken turn: grammar errors in red, "a native would say it differently" in amber,
+// target words in green. When a target word sits inside an error/amber span, the error wins
+// and a small green dot marks the target word. Tooltips carry the fix, so the transcript reads
+// as a conclusive review.
+const annotateTurn = (
+  text: string, grammar: GrammarNote[], idioms: IdiomUpgrade[], targets: TargetWordVerdict[], senses: Record<string, string>,
+): React.ReactNode => {
   const marks: Mark[] = [];
   const lower = text.toLowerCase();
-  const add = (needle: string, kind: Mark['kind'], tip: string) => {
+  const add = (needle: string, kind: MarkKind, label: string, tip: string) => {
     const n = needle.trim().toLowerCase();
     if (n.length < 3) return;
     const idx = lower.indexOf(n);
-    if (idx >= 0) marks.push({ start: idx, end: idx + n.length, kind, tip });
+    if (idx >= 0) marks.push({ start: idx, end: idx + n.length, kind, label, tip });
   };
-  grammar.forEach(g => add(g.quote, 'grammar', `→ "${g.fix}" — ${g.why}`));
-  idioms.forEach(u => add(u.original, 'idiom', `→ "${u.upgraded}"${u.why ? ' — ' + u.why : ''}`));
+  grammar.forEach(g => add(g.quote, 'grammar', 'Error — needs fixing', `→ "${g.fix}" — ${g.why}`));
+  idioms.forEach(u => add(u.original, 'idiom', 'A native would say it differently', `→ "${u.upgraded}"${u.why ? ' — ' + u.why : ''}`));
   marks.sort((a, b) => a.start - b.start);
   const kept: Mark[] = [];
   for (const m of marks) if (!kept.length || m.start >= kept[kept.length - 1].end) kept.push(m);
+
+  // Target words: green on their own; a green dot when they overlap an error/amber span.
+  targets.filter(t => t.used).forEach(t => {
+    const hit = findTarget(text, t.word);
+    if (!hit) return;
+    const sense = senses[t.word.toLowerCase()];
+    const label = t.usedWell ? 'Target word · used well' : 'Target word · not quite right yet';
+    const tip = [`"${t.word}"${sense ? ` — ${sense}` : ''}`, t.usedWell ? '' : t.comment].filter(Boolean).join('. ');
+    const overlap = kept.find(m => hit.start < m.end && m.start < hit.end);
+    if (overlap) { if (!overlap.target) overlap.target = { label, tip }; return; }
+    if (!t.usedWell) return; // green highlight is reserved for words used well
+    kept.push({ ...hit, kind: 'target', label, tip });
+  });
+  kept.sort((a, b) => a.start - b.start);
+
   if (!kept.length) return text;
   const out: React.ReactNode[] = [];
   let pos = 0;
   kept.forEach((m, i) => {
     if (m.start > pos) out.push(text.slice(pos, m.start));
-    out.push(
-      <span
-        key={i}
-        title={m.tip}
-        className={`underline decoration-2 underline-offset-2 rounded-sm px-0.5 cursor-help ${
-          m.kind === 'grammar' ? 'bg-red-50 text-red-700 decoration-red-300' : 'bg-amber-50 text-amber-800 decoration-amber-300'
-        }`}
-      >
-        {text.slice(m.start, m.end)}
-      </span>
-    );
+    out.push(<Highlight key={i} mark={m}>{text.slice(m.start, m.end)}</Highlight>);
     pos = m.end;
   });
   if (pos < text.length) out.push(text.slice(pos));
@@ -88,7 +163,9 @@ const SavePhraseButton: React.FC<{ original: string; upgraded: string; why?: str
   );
 };
 
-export const Feedback: React.FC<FeedbackProps> = ({ report, plan, transcript, modeLabel, onPhrasesChanged, onNewSession, onHome }) => (
+export const Feedback: React.FC<FeedbackProps> = ({ report, plan, transcript, wordSenses, modeLabel, onPhrasesChanged, onNewSession, onHome }) => {
+  const senses: Record<string, string> = wordSenses ?? {};
+  return (
   <div className="max-w-3xl mx-auto px-4 space-y-6 animate-fade-in-up pb-16">
     {/* Score header */}
     <div className="bg-white rounded-2xl border border-stone-100 shadow-sm p-8 flex items-center justify-between gap-6 flex-wrap">
@@ -119,26 +196,28 @@ export const Feedback: React.FC<FeedbackProps> = ({ report, plan, transcript, mo
     {/* Everything you said — annotated transcript */}
     {transcript && transcript.length > 0 && (
       <section className="bg-white rounded-2xl border border-stone-100 shadow-sm p-8 space-y-5">
-        <div className="flex items-center justify-between gap-3 flex-wrap">
+        <div className="space-y-1">
           <h3 className="text-[11px] font-bold uppercase tracking-[0.25em] text-stone-400 flex items-center gap-2">
             <Quote className="w-4 h-4" /> Everything You Said
           </h3>
-          <div className="flex items-center gap-4 text-[11px] text-stone-400">
-            <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full bg-red-300"></span> fix this</span>
-            <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full bg-amber-300"></span> more native</span>
-          </div>
+          <p className="text-sm text-stone-500 font-serif">Your words, marked up by your coach. Hover or tap any highlight for the details.</p>
+        </div>
+        <div className="flex flex-wrap gap-x-5 gap-y-2 text-xs text-stone-600 bg-stone-50 rounded-xl px-4 py-3">
+          <span className="flex items-center gap-2"><span className="w-2.5 h-2.5 rounded-full bg-red-300 shrink-0"></span><span><b className="text-red-700">Error</b> — needs fixing</span></span>
+          <span className="flex items-center gap-2"><span className="w-2.5 h-2.5 rounded-full bg-amber-300 shrink-0"></span><span><b className="text-amber-800">Correct</b>, but a native would say it differently</span></span>
+          <span className="flex items-center gap-2"><span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: GREEN }}></span><span><b style={{ color: GREEN }}>Target word</b> used well</span></span>
         </div>
         <div className="space-y-4">
           {transcript.map((t, i) => (
             <div key={i} className="flex items-start gap-3">
               <span className="shrink-0 text-[10px] font-bold text-stone-300 font-mono mt-1.5 w-5 text-right">{i + 1}</span>
               <p className="font-serif text-stone-800 leading-relaxed text-[15px]">
-                {annotateTurn(t, report.grammar, report.idioms)}
+                {annotateTurn(t, report.grammar, report.idioms, report.targetWords, senses)}
               </p>
             </div>
           ))}
         </div>
-        <p className="text-xs text-stone-400">Hover a highlight to see the fix — details in the sections below.</p>
+        <p className="text-xs text-stone-400">A small green dot means a target word sits inside an error or amber note — the fix comes first. Details in the sections below.</p>
       </section>
     )}
 
@@ -235,4 +314,5 @@ export const Feedback: React.FC<FeedbackProps> = ({ report, plan, transcript, mo
       </button>
     </div>
   </div>
-);
+  );
+};
