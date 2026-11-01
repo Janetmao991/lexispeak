@@ -43,6 +43,9 @@ export const Session: React.FC<SessionProps> = ({ mode, role, candidateWords, on
   // Demo mode: a pre-written conversation played back line by line (no AI, no mic).
   const [script] = useState(() => (IS_DEMO ? demoScript(mode.id) : null));
   const [playing, setPlaying] = useState(false);
+  // The demo line currently being spoken (null when nothing is) — Play waits for it to finish.
+  const speechRef = useRef<Promise<void> | null>(null);
+  const startedRef = useRef(false);
   const recRef = useRef<RecorderHandle | null>(null);
   const pendingAudio = useRef<{ base64: string; mime: string } | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -50,11 +53,13 @@ export const Session: React.FC<SessionProps> = ({ mode, role, candidateWords, on
   voiceOnRef.current = voiceOn;
 
   const voiceOf = (speaker: string) => mode.personas.find(p => p.name === speaker)?.voice || 'Puck';
+  // Persona index → which English browser voice speaks for them (distinct per persona).
+  const slotOf = (speaker: string) => Math.max(0, mode.personas.findIndex(p => p.name === speaker));
 
   const speakTurns = async (turns: { speaker: string; text: string }[]) => {
     if (!voiceOnRef.current) return;
     for (const t of turns) {
-      await speakSafe(t.text, voiceOf(t.speaker));
+      await speakSafe(t.text, voiceOf(t.speaker), slotOf(t.speaker));
     }
   };
 
@@ -69,7 +74,7 @@ export const Session: React.FC<SessionProps> = ({ mode, role, candidateWords, on
       setHistory(prev => [...prev, turns[i]]);
       if (!voiceOnRef.current) continue;
       if (audio) { try { await playSpeech(audio); } catch { /* skip */ } }
-      else await speakFallback(turns[i].text);
+      else await speakFallback(turns[i].text, slotOf(turns[i].speaker));
     }
   };
 
@@ -81,7 +86,7 @@ export const Session: React.FC<SessionProps> = ({ mode, role, candidateWords, on
     setError(null);
     if (script) {
       setPlaying(false);
-      window.speechSynthesis?.cancel();
+      speechRef.current = null;
       setPlan(script.plan);
       setHistory(script.turns.slice(0, 1));
       setPhase('chatting');
@@ -113,8 +118,9 @@ export const Session: React.FC<SessionProps> = ({ mode, role, candidateWords, on
   };
 
   useEffect(() => {
-    start();
-    return () => { recRef.current?.cancel(); stopSpeech(); if (IS_DEMO) window.speechSynthesis?.cancel(); };
+    // StrictMode mounts effects twice in dev; starting twice would plan and speak the opener twice.
+    if (!startedRef.current) { startedRef.current = true; start(); }
+    return () => { recRef.current?.cancel(); stopSpeech(); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -124,18 +130,25 @@ export const Session: React.FC<SessionProps> = ({ mode, role, candidateWords, on
     if (!script || demoDone) return;
     const next = script.turns[history.length];
     setHistory(script.turns.slice(0, history.length + 1));
-    if (voiceOn && next.speaker !== 'You') {
-      window.speechSynthesis?.cancel();
-      speakFallback(next.text);
-    }
+    // speakFallback cancels any line still playing, so voices never overlap.
+    speechRef.current = voiceOnRef.current && next.speaker !== 'You'
+      ? speakFallback(next.text, slotOf(next.speaker))
+      : null;
   };
 
-  // "Play" steps through the remaining lines on a timer.
+  // "Play" steps through the remaining lines: after a spoken line, wait for it to
+  // finish (plus a short breath); otherwise a reading pause.
   useEffect(() => {
     if (!playing) return;
     if (demoDone) { setPlaying(false); return; }
-    const t = setTimeout(stepDemo, 1500);
-    return () => clearTimeout(t);
+    let cancelled = false;
+    const spoken = speechRef.current;
+    (async () => {
+      if (spoken) { await spoken; await new Promise(r => setTimeout(r, 500)); }
+      else await new Promise(r => setTimeout(r, 1500));
+      if (!cancelled) stepDemo();
+    })();
+    return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [playing, history.length]);
 
@@ -220,7 +233,6 @@ export const Session: React.FC<SessionProps> = ({ mode, role, candidateWords, on
     if (script) {
       // The coaching report is pre-written too; a short pause keeps the "reviewing" beat.
       setPlaying(false);
-      window.speechSynthesis?.cancel();
       setTimeout(() => onFinished(script.plan, script.turns, script.report), 1200);
       return;
     }
@@ -363,7 +375,10 @@ export const Session: React.FC<SessionProps> = ({ mode, role, candidateWords, on
                   <SkipForward className="w-3.5 h-3.5" /> Next line
                 </button>
                 <button
-                  onClick={() => setPlaying(!playing)}
+                  onClick={() => {
+                    if (playing) { stopSpeech(); speechRef.current = null; }
+                    setPlaying(!playing);
+                  }}
                   disabled={demoDone}
                   className="shrink-0 flex items-center gap-1.5 px-4 py-2.5 rounded-full bg-stone-900 text-white text-xs font-bold hover:bg-black disabled:opacity-40 transition-all"
                 >
@@ -388,7 +403,7 @@ export const Session: React.FC<SessionProps> = ({ mode, role, candidateWords, on
             </>)}
           </div>
           <div className="flex items-center justify-between">
-            <button onClick={() => { setVoiceOn(!voiceOn); if (voiceOn) { stopSpeech(); if (IS_DEMO) window.speechSynthesis?.cancel(); } }} className="text-xs text-stone-400 hover:text-stone-700 flex items-center gap-1">
+            <button onClick={() => { setVoiceOn(!voiceOn); if (voiceOn) stopSpeech(); }} className="text-xs text-stone-400 hover:text-stone-700 flex items-center gap-1">
               {voiceOn ? <Volume2 className="w-3.5 h-3.5" /> : <VolumeX className="w-3.5 h-3.5" />}
               {voiceOn ? 'Voices on' : 'Voices off'}
             </button>

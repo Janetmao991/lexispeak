@@ -3,6 +3,7 @@
 import { GoogleGenAI, Type, Modality, ThinkingLevel, GenerateContentParameters, GenerateContentResponse } from '@google/genai';
 import { Turn, FeedbackReport } from '../types';
 import { IS_DEMO, DemoNoteError } from './demo';
+import { speakBrowser, cancelBrowserSpeech } from './browserVoice';
 
 // ---- BYOK: key lives in this browser only (same convention as LexiAI) ----
 export const getApiKey = (): string =>
@@ -112,6 +113,7 @@ async function decodeAudioData(data: Uint8Array, ctx: AudioContext, sampleRate: 
 let activeSpeech: { ctx: AudioContext; source: AudioBufferSourceNode } | null = null;
 
 export const stopSpeech = () => {
+  cancelBrowserSpeech();
   if (activeSpeech) {
     try { activeSpeech.source.stop(); activeSpeech.ctx.close(); } catch { /* already stopped */ }
     activeSpeech = null;
@@ -156,32 +158,15 @@ export const playSpeech = async (base64Audio: string): Promise<void> => {
 export const speak = async (text: string, voiceName: string): Promise<void> =>
   playSpeech(await fetchSpeech(text, voiceName));
 
-/** Browser-TTS fallback (used when Gemini TTS fails). */
-export const speakFallback = (text: string): Promise<void> => {
-  if (!('speechSynthesis' in window)) return Promise.resolve();
-  return new Promise<void>(resolve => {
-    const u = new SpeechSynthesisUtterance(text);
-    u.lang = 'en-US';
-    u.onend = () => resolve();
-    u.onerror = () => resolve();
-    window.speechSynthesis.speak(u);
-  });
-};
+/** Browser-TTS fallback (demo mode, or when Gemini TTS fails). `slot` = persona index → distinct English voice. */
+export const speakFallback = (text: string, slot = 0): Promise<void> => speakBrowser(text, slot);
 
 /** TTS with browser fallback so the conversation never blocks on voice. */
-export const speakSafe = async (text: string, voiceName: string): Promise<void> => {
-  if (IS_DEMO) return speakFallback(text);
+export const speakSafe = async (text: string, voiceName: string, slot = 0): Promise<void> => {
+  if (IS_DEMO) return speakFallback(text, slot);
   try {
     await speak(text, voiceName);
   } catch {
-    if ('speechSynthesis' in window) {
-      await new Promise<void>(resolve => {
-        const u = new SpeechSynthesisUtterance(text);
-        u.lang = 'en-US';
-        u.onend = () => resolve();
-        u.onerror = () => resolve();
-        window.speechSynthesis.speak(u);
-      });
-    }
+    await speakFallback(text, slot);
   }
 };
