@@ -26,6 +26,7 @@ export default defineConfig(({ mode }) => {
         },
         workbox: {
           globPatterns: ['**/*.{js,css,html,png,svg,woff2}'],
+          globIgnores: ['**/fixture-*.js'], // demo-only data: fetched on demand, not precached for everyone
           navigateFallback: '/index.html',
           runtimeCaching: [
             {

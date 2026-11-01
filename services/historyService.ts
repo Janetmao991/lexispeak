@@ -1,21 +1,26 @@
 import { SessionRecord } from '../types';
+import { IS_DEMO, demoStore, demoFixture } from './demo';
 
 const KEY = 'lexispeak_history_v1';
 const MAX = 50;
 
+// Demo mode keeps its own copy in this tab's sessionStorage, seeded from the fixture.
+const store = IS_DEMO ? demoStore : localStorage;
+const read = (): string => store.getItem(KEY) ?? (IS_DEMO ? JSON.stringify(demoFixture().history) : '[]');
+
 export const historyService = {
   getAll: (): SessionRecord[] => {
     try {
-      return JSON.parse(localStorage.getItem(KEY) || '[]');
+      return JSON.parse(read());
     } catch {
       return [];
     }
   },
   add: (record: SessionRecord) => {
     const all = [record, ...historyService.getAll()].slice(0, MAX);
-    localStorage.setItem(KEY, JSON.stringify(all));
+    store.setItem(KEY, JSON.stringify(all));
   },
   remove: (id: string) => {
-    localStorage.setItem(KEY, JSON.stringify(historyService.getAll().filter(r => r.id !== id)));
+    store.setItem(KEY, JSON.stringify(historyService.getAll().filter(r => r.id !== id)));
   },
 };

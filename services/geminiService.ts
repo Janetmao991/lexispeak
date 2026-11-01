@@ -2,6 +2,7 @@
 // pronunciation. Claude can't hear or speak; the conversation itself is in claudeService.ts.
 import { GoogleGenAI, Type, Modality, ThinkingLevel, GenerateContentParameters, GenerateContentResponse } from '@google/genai';
 import { Turn, FeedbackReport } from '../types';
+import { IS_DEMO, DemoNoteError } from './demo';
 
 // ---- BYOK: key lives in this browser only (same convention as LexiAI) ----
 export const getApiKey = (): string =>
@@ -12,6 +13,7 @@ const MODEL = 'gemini-3-flash-preview';
 const TTS_MODEL = 'gemini-2.5-flash-preview-tts';
 
 const getAi = () => {
+  if (IS_DEMO) throw new DemoNoteError(); // the demo never calls Gemini
   const key = getApiKey();
   if (!key) throw new Error('No Gemini API key configured. It powers voice (transcription and persona voices) — open Settings and paste your free key from aistudio.google.com/apikey.');
   return new GoogleGenAI({ apiKey: key, httpOptions: { timeout: 60000 } });
@@ -168,6 +170,7 @@ export const speakFallback = (text: string): Promise<void> => {
 
 /** TTS with browser fallback so the conversation never blocks on voice. */
 export const speakSafe = async (text: string, voiceName: string): Promise<void> => {
+  if (IS_DEMO) return speakFallback(text);
   try {
     await speak(text, voiceName);
   } catch {

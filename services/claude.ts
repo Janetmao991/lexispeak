@@ -2,6 +2,7 @@
 // Claude runs the conversation and grades what you said;
 // Gemini is kept only for audio (transcription + voices) — see geminiService.ts.
 import Anthropic from "@anthropic-ai/sdk";
+import { IS_DEMO, DemoNoteError } from "./demo";
 
 // ---- BYOK: the Claude key lives in this browser only ----
 const CLAUDE_KEY_STORAGE = 'lexiai_claude_key';
@@ -22,6 +23,7 @@ export const getClaudeModel = (): string => {
 };
 
 const getClient = (timeoutMs: number) => {
+  if (IS_DEMO) throw new DemoNoteError(); // the demo plays a script; it never calls Claude
   const apiKey = getClaudeKey();
   if (!apiKey) throw new Error('No Claude API key configured. Open Settings and paste your key from console.anthropic.com.');
   // "dangerouslyAllowBrowser": the SDK normally refuses to run in a browser because

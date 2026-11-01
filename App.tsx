@@ -10,7 +10,8 @@ import { historyService } from './services/historyService';
 import { phrasesService } from './services/phrasesService';
 import { hasApiKey } from './services/geminiService';
 import { hasClaudeKey } from './services/claudeService';
-import { Mic2, X, Loader2, LogOut, Settings as SettingsIcon, KeyRound, Eye, EyeOff, Check, ExternalLink, History as HistoryIcon, BookMarked, Trash2, MessagesSquare, Briefcase, Users, Coffee, Cloud, CloudOff, Feather } from 'lucide-react';
+import { IS_DEMO, DEMO_NOTE_EVENT, showDemoNote, enterDemo, exitDemo, demoScript, getDemoWords, markDemoSpoken } from './services/demo';
+import { Mic2, X, Loader2, LogOut, Settings as SettingsIcon, KeyRound, Eye, EyeOff, Check, ExternalLink, History as HistoryIcon, BookMarked, Trash2, MessagesSquare, Briefcase, Users, Coffee, Cloud, CloudOff, Feather, PlayCircle } from 'lucide-react';
 import type { Session as SupaSession } from '@supabase/supabase-js';
 
 type Screen = 'home' | 'session' | 'feedback' | 'history' | 'phrases';
@@ -26,7 +27,7 @@ const MODE_ICONS: Record<string, React.ReactNode> = {
 const App: React.FC = () => {
   const [screen, setScreen] = useState<Screen>('home');
   const [session, setSession] = useState<SupaSession | null>(null);
-  const [words, setWords] = useState<WordLite[]>([]);
+  const [words, setWords] = useState<WordLite[]>(() => (IS_DEMO ? getDemoWords() : []));
   const [wordsLoading, setWordsLoading] = useState(false);
 
   const [activeMode, setActiveMode] = useState<ModeDef | null>(null);
@@ -57,10 +58,24 @@ const App: React.FC = () => {
   const [claudeKeyInput, setClaudeKeyInput] = useState(() => localStorage.getItem('lexiai_claude_key') || '');
   const [showKey, setShowKey] = useState(false);
   const [keySaved, setKeySaved] = useState(false);
-  const [keyConfigured, setKeyConfigured] = useState(() => hasApiKey() && hasClaudeKey());
+  const [keyConfigured, setKeyConfigured] = useState(() => IS_DEMO || (hasApiKey() && hasClaudeKey()));
+  const [demoToast, setDemoToast] = useState<string | null>(null);
 
   const [history, setHistory] = useState<SessionRecord[]>(() => historyService.getAll());
   const [phrases, setPhrases] = useState(() => phrasesService.getAll());
+
+  // Demo: friendly notes pop up as a short toast.
+  useEffect(() => {
+    if (!IS_DEMO) return;
+    let timer: number | undefined;
+    const onNote = (e: Event) => {
+      setDemoToast((e as CustomEvent<string>).detail);
+      window.clearTimeout(timer);
+      timer = window.setTimeout(() => setDemoToast(null), 4000);
+    };
+    window.addEventListener(DEMO_NOTE_EVENT, onNote);
+    return () => { window.removeEventListener(DEMO_NOTE_EVENT, onNote); window.clearTimeout(timer); };
+  }, []);
 
   useEffect(() => {
     if (!supabase) return;
@@ -77,6 +92,11 @@ const App: React.FC = () => {
   useEffect(() => {
     const hash = window.location.hash;
     if (!hash) return;
+    if (hash === '#signin') { // landing here after "Exit demo"
+      setShowAuth(true);
+      window.history.replaceState(null, '', window.location.pathname);
+      return;
+    }
     if (/type=recovery/.test(hash)) setShowReset(true);
     const err = hash.match(/error_description=([^&]+)/);
     if (err) {
@@ -88,6 +108,7 @@ const App: React.FC = () => {
   }, []);
 
   useEffect(() => {
+    if (IS_DEMO) return; // the sample notebook is already loaded
     if (!session) { setWords([]); return; }
     setWordsLoading(true);
     wordsService.fetchWords(session.user.id)
@@ -109,6 +130,7 @@ const App: React.FC = () => {
   };
 
   const startMode = (mode: ModeDef) => {
+    if (IS_DEMO && !demoScript(mode.id)) { showDemoNote(); return; }
     if (!keyConfigured) { setShowSettings(true); return; }
     setActiveMode(mode);
     setScreen('session');
@@ -133,6 +155,7 @@ const App: React.FC = () => {
     setHistory(historyService.getAll());
     // Write mastery back to the shared LexiAI vocabulary.
     const wellUsed = report.targetWords.filter(t => t.usedWell).map(t => t.word);
+    if (IS_DEMO && wellUsed.length) setWords(markDemoSpoken(wellUsed));
     if (session && wellUsed.length) {
       wordsService.markSpokenWell(session.user.id, wellUsed).catch(() => {});
       setWords(prev => prev.map(w => wellUsed.some(x => x.toLowerCase() === w.word.toLowerCase()) ? { ...w, speakingPassed: true } : w));
@@ -209,10 +232,10 @@ const App: React.FC = () => {
             <button onClick={() => { setPhrases(phrasesService.getAll()); setScreen('phrases'); }} className={`p-2 rounded-lg transition-colors ${screen === 'phrases' ? 'bg-stone-900 text-white' : 'text-stone-400 hover:text-stone-900'}`} title="Phrase notebook">
               <BookMarked className="w-4 h-4" />
             </button>
-            <button onClick={() => setShowSettings(true)} className="p-2 rounded-lg text-stone-400 hover:text-stone-900" title="Settings">
+            <button onClick={() => IS_DEMO ? showDemoNote() : setShowSettings(true)} className="p-2 rounded-lg text-stone-400 hover:text-stone-900" title="Settings">
               <SettingsIcon className="w-4 h-4" />
             </button>
-            <button
+            {!IS_DEMO && <button
               onClick={() => session ? (window.confirm('Sign out?') && supabase?.auth.signOut()) : setShowAuth(true)}
               className={`flex items-center gap-2 px-3 py-1.5 rounded-full border text-xs font-bold uppercase tracking-wider transition-all ${
                 session ? 'bg-emerald-50 border-emerald-100 text-emerald-700' : 'bg-stone-100 border-stone-200 text-stone-400'
@@ -220,9 +243,20 @@ const App: React.FC = () => {
             >
               {session ? <Cloud className="w-3 h-3" /> : <CloudOff className="w-3 h-3" />}
               {session ? (session.user.email || '').split('@')[0] : 'Sign In'}
-            </button>
+            </button>}
           </div>
         </div>
+        {IS_DEMO && (
+          <div className="bg-stone-900 text-[#FDFBF7] text-xs">
+            <div className="max-w-4xl mx-auto px-4 py-2 flex items-center justify-between gap-3 flex-wrap">
+              <p><span className="font-bold">Demo mode</span><span className="text-stone-400"> · Sample conversations, nothing leaves this tab</span></p>
+              <div className="flex items-center gap-3">
+                <button onClick={exitDemo} className="px-3 py-1 bg-[#FDFBF7] text-stone-900 rounded-full font-bold hover:bg-white">Sign up</button>
+                <button onClick={exitDemo} className="text-stone-300 underline underline-offset-4 hover:text-white">Exit demo</button>
+              </div>
+            </div>
+          </div>
+        )}
       </header>
 
       <main className="py-10">
@@ -231,7 +265,11 @@ const App: React.FC = () => {
             <div className="text-center space-y-3">
               <h1 className="text-5xl font-serif font-bold tracking-tight">Speaking Studio</h1>
               <p className="text-stone-500 font-serif italic">Real conversation practice, coached like a pro.</p>
-              {session ? (
+              {IS_DEMO ? (
+                <p className="text-xs text-stone-400 font-bold uppercase tracking-widest">
+                  {`${words.length} words in a sample LexiAI notebook · ${spokenCount} can-speak 🗣️`}
+                </p>
+              ) : session ? (
                 <p className="text-xs text-stone-400 font-bold uppercase tracking-widest">
                   {wordsLoading ? 'Loading your vocabulary…' : `${words.length} words in your library · ${spokenCount} can-speak 🗣️`}
                 </p>
@@ -259,7 +297,7 @@ const App: React.FC = () => {
                     onClick={() => startMode(free)}
                     className="shrink-0 px-8 py-3.5 bg-[#FDFBF7] text-stone-900 rounded-full text-sm font-bold hover:bg-white transition-colors"
                   >
-                    Start Talking
+                    {IS_DEMO ? 'Play Sample' : 'Start Talking'}
                   </button>
                 </div>
               );
@@ -288,6 +326,7 @@ const App: React.FC = () => {
                     <input
                       value={role}
                       onChange={e => setRole(e.target.value)}
+                      readOnly={IS_DEMO}
                       onClick={e => e.stopPropagation()}
                       placeholder="Target role, e.g. Investment Banking Analyst"
                       className="w-full p-3 bg-stone-50 border border-stone-200 rounded-xl text-sm outline-none focus:ring-1 focus:ring-stone-400"
@@ -297,12 +336,31 @@ const App: React.FC = () => {
                     onClick={() => startMode(mode)}
                     className="w-full py-3 bg-stone-900 text-white rounded-full text-sm font-bold hover:bg-black transition-colors"
                   >
-                    Start Session
+                    {IS_DEMO && demoScript(mode.id) ? 'Play Sample' : 'Start Session'}
                   </button>
                 </div>
               ))}
             </div>
             </div>
+
+            {IS_DEMO && (
+              <div className="bg-white rounded-2xl border border-stone-100 shadow-sm p-7 space-y-4">
+                <div>
+                  <p className="text-[11px] font-bold uppercase tracking-widest text-stone-400">Target words · from LexiAI</p>
+                  <p className="text-sm text-stone-500 mt-1">Sessions pull words from your LexiAI notebook. Use one well and it becomes 🗣️ Can Speak there too.</p>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  {words.map(w => (
+                    <span key={w.word} title={w.definition} className={`text-xs font-bold px-3 py-1 rounded-full border ${
+                      w.speakingPassed ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-stone-50 text-stone-600 border-stone-200'
+                    }`}>
+                      {w.speakingPassed ? '🗣️ ' : ''}{w.word}
+                    </span>
+                  ))}
+                </div>
+                <p className="text-xs text-stone-400 flex items-center gap-1.5"><PlayCircle className="w-3.5 h-3.5" /> Play the Interview sample to the end to see three more become Can Speak.</p>
+              </div>
+            )}
 
             {!keyConfigured && (
               <div className="bg-amber-50 border border-amber-100 rounded-2xl p-4 flex items-center justify-between gap-4">
@@ -447,6 +505,14 @@ const App: React.FC = () => {
                 {authView === 'signin' ? 'Forgot password?' : '← Back to sign in'}
               </button>
             </form>
+            {authView === 'signin' && (
+              <div className="pt-4 border-t border-stone-100 text-center space-y-2">
+                <p className="text-sm text-stone-500">Just looking? See a full session and coaching report — no account or API key.</p>
+                <button type="button" onClick={enterDemo} className="px-6 py-2.5 border border-stone-900 rounded-full text-sm font-bold text-stone-900 hover:bg-stone-900 hover:text-white transition-colors">
+                  Try the demo
+                </button>
+              </div>
+            )}
           </div>
         </div>
       )}
@@ -530,6 +596,11 @@ const App: React.FC = () => {
               </button>
             )}
           </div>
+        </div>
+      )}
+      {demoToast && (
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-[80] bg-stone-900 text-white text-sm px-5 py-3 rounded-full shadow-xl animate-fade-in">
+          {demoToast}
         </div>
       )}
     </div>

@@ -4,7 +4,8 @@ import { ModeDef, SessionPlan, Turn, FeedbackReport } from '../types';
 import { planSession, nextTurns, freeTalkTurns, gradeSession, friendlyError } from '../services/claudeService';
 import { transcribeAudio, speakSafe, stopSpeech, fetchSpeech, playSpeech, speakFallback } from '../services/geminiService';
 import { startRecording, RecorderHandle } from '../services/recorderService';
-import { Mic, Square, Send, Loader2, Volume2, VolumeX, Flag, Shuffle, ArrowLeft, Pencil } from 'lucide-react';
+import { IS_DEMO, DEMO_NOTE, demoScript } from '../services/demo';
+import { Mic, Square, Send, Loader2, Volume2, VolumeX, Flag, Shuffle, ArrowLeft, Pencil, Play, Pause, SkipForward } from 'lucide-react';
 
 const FREE_OPENERS = [
   "Hey! Good to see you. What's on your mind today?",
@@ -37,8 +38,11 @@ export const Session: React.FC<SessionProps> = ({ mode, role, candidateWords, on
   const [sending, setSending] = useState(false);
   const [recording, setRecording] = useState(false);
   const [transcribing, setTranscribing] = useState(false);
-  const [voiceOn, setVoiceOn] = useState(true);
+  const [voiceOn, setVoiceOn] = useState(!IS_DEMO);
   const [error, setError] = useState<string | null>(null);
+  // Demo mode: a pre-written conversation played back line by line (no AI, no mic).
+  const [script] = useState(() => (IS_DEMO ? demoScript(mode.id) : null));
+  const [playing, setPlaying] = useState(false);
   const recRef = useRef<RecorderHandle | null>(null);
   const pendingAudio = useRef<{ base64: string; mime: string } | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -75,6 +79,14 @@ export const Session: React.FC<SessionProps> = ({ mode, role, candidateWords, on
     setPhase('planning');
     setHistory([]);
     setError(null);
+    if (script) {
+      setPlaying(false);
+      window.speechSynthesis?.cancel();
+      setPlan(script.plan);
+      setHistory(script.turns.slice(0, 1));
+      setPhase('chatting');
+      return;
+    }
     if (isFree) {
       // No planning round-trip: canned opener, no topic, no target words.
       const opener: Turn = {
@@ -102,9 +114,30 @@ export const Session: React.FC<SessionProps> = ({ mode, role, candidateWords, on
 
   useEffect(() => {
     start();
-    return () => { recRef.current?.cancel(); stopSpeech(); };
+    return () => { recRef.current?.cancel(); stopSpeech(); if (IS_DEMO) window.speechSynthesis?.cancel(); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  const demoDone = !!script && history.length >= script.turns.length;
+
+  const stepDemo = () => {
+    if (!script || demoDone) return;
+    const next = script.turns[history.length];
+    setHistory(script.turns.slice(0, history.length + 1));
+    if (voiceOn && next.speaker !== 'You') {
+      window.speechSynthesis?.cancel();
+      speakFallback(next.text);
+    }
+  };
+
+  // "Play" steps through the remaining lines on a timer.
+  useEffect(() => {
+    if (!playing) return;
+    if (demoDone) { setPlaying(false); return; }
+    const t = setTimeout(stepDemo, 1500);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [playing, history.length]);
 
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' });
@@ -146,6 +179,7 @@ export const Session: React.FC<SessionProps> = ({ mode, role, candidateWords, on
   };
 
   const toggleMic = async () => {
+    if (IS_DEMO) { setError(DEMO_NOTE); return; }
     if (recording) {
       setRecording(false);
       setTranscribing(true);
@@ -183,6 +217,13 @@ export const Session: React.FC<SessionProps> = ({ mode, role, candidateWords, on
     if (!plan) return;
     stopSpeech();
     setPhase('grading');
+    if (script) {
+      // The coaching report is pre-written too; a short pause keeps the "reviewing" beat.
+      setPlaying(false);
+      window.speechSynthesis?.cancel();
+      setTimeout(() => onFinished(script.plan, script.turns, script.report), 1200);
+      return;
+    }
     try {
       const report = await gradeSession(history, plan.targetWords);
       onFinished(plan, history, report);
@@ -309,6 +350,27 @@ export const Session: React.FC<SessionProps> = ({ mode, role, candidateWords, on
             >
               {transcribing ? <Loader2 className="w-5 h-5 animate-spin" /> : recording ? <Square className="w-5 h-5" /> : <Mic className="w-5 h-5" />}
             </button>
+            {script ? (
+              <>
+                <p className="flex-1 text-sm text-stone-500 font-serif italic px-1">
+                  Sample conversation · line {history.length} of {script.turns.length}
+                </p>
+                <button
+                  onClick={stepDemo}
+                  disabled={demoDone || playing}
+                  className="shrink-0 flex items-center gap-1.5 px-4 py-2.5 rounded-full border border-stone-200 text-xs font-bold text-stone-600 hover:border-stone-900 hover:text-stone-900 disabled:opacity-40 transition-all"
+                >
+                  <SkipForward className="w-3.5 h-3.5" /> Next line
+                </button>
+                <button
+                  onClick={() => setPlaying(!playing)}
+                  disabled={demoDone}
+                  className="shrink-0 flex items-center gap-1.5 px-4 py-2.5 rounded-full bg-stone-900 text-white text-xs font-bold hover:bg-black disabled:opacity-40 transition-all"
+                >
+                  {playing ? <><Pause className="w-3.5 h-3.5" /> Pause</> : <><Play className="w-3.5 h-3.5" /> Play</>}
+                </button>
+              </>
+            ) : (<>
             <input
               value={input}
               onChange={e => setInput(e.target.value)}
@@ -323,9 +385,10 @@ export const Session: React.FC<SessionProps> = ({ mode, role, candidateWords, on
             >
               <Send className="w-4 h-4" />
             </button>
+            </>)}
           </div>
           <div className="flex items-center justify-between">
-            <button onClick={() => { setVoiceOn(!voiceOn); if (voiceOn) stopSpeech(); }} className="text-xs text-stone-400 hover:text-stone-700 flex items-center gap-1">
+            <button onClick={() => { setVoiceOn(!voiceOn); if (voiceOn) { stopSpeech(); if (IS_DEMO) window.speechSynthesis?.cancel(); } }} className="text-xs text-stone-400 hover:text-stone-700 flex items-center gap-1">
               {voiceOn ? <Volume2 className="w-3.5 h-3.5" /> : <VolumeX className="w-3.5 h-3.5" />}
               {voiceOn ? 'Voices on' : 'Voices off'}
             </button>

@@ -4,6 +4,7 @@ import { FeedbackReport, SessionPlan, GrammarNote, IdiomUpgrade } from '../types
 import { Award, Mic, Sparkles, Target, Lightbulb, ArrowLeft, RotateCcw, CheckCircle2, XCircle, Volume2, Loader2, BookmarkPlus, BookmarkCheck, Quote } from 'lucide-react';
 import { speakSafe } from '../services/geminiService';
 import { phrasesService } from '../services/phrasesService';
+import { IS_DEMO } from '../services/demo';
 
 interface FeedbackProps {
   report: FeedbackReport;
@@ -217,7 +218,7 @@ export const Feedback: React.FC<FeedbackProps> = ({ report, plan, transcript, mo
           <div>
             <p className="font-serif font-bold text-stone-900 capitalize text-sm">
               {t.word}
-              {t.usedWell && <span className="ml-2 text-[10px] font-bold text-emerald-700 uppercase tracking-wide">🗣️ Can Speak — synced to LexiAI</span>}
+              {t.usedWell && <span className="ml-2 text-[10px] font-bold text-emerald-700 uppercase tracking-wide">🗣️ Can Speak{IS_DEMO ? '' : ' — synced to LexiAI'}</span>}
             </p>
             <p className="text-sm text-stone-500">{t.comment}</p>
           </div>
