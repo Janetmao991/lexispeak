@@ -39,8 +39,9 @@ export default defineConfig(({ mode }) => {
     ],
     server: { port: 5175, strictPort: true },
     define: {
-      'process.env.API_KEY': JSON.stringify(env.API_KEY),
-      'process.env.ANTHROPIC_API_KEY': JSON.stringify(env.ANTHROPIC_API_KEY),
+      // AI keys are BYOK (typed into Settings, kept in the browser) — never bake them into the bundle.
+      'process.env.API_KEY': 'undefined',
+      'process.env.ANTHROPIC_API_KEY': 'undefined',
       'process.env.SUPABASE_URL': JSON.stringify(env.SUPABASE_URL),
       'process.env.SUPABASE_KEY': JSON.stringify(env.SUPABASE_KEY)
     }
